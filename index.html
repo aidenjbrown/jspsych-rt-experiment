@@ -4,6 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>jsPsych Bot Prototype</title>
+    <!-- Pinned jsPsych build with native session recording (record_session /
+         getSessionRecording), required for the replay viewer. -->
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/dist/index.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/css/jspsych.css">
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-html-keyboard-response/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-html-button-response/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-survey-text/dist/index.browser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-survey-multi-choice/dist/index.browser.min.js"></script>
     <style>
       body {
         margin: 0;
@@ -12,46 +20,24 @@
         color: #202124;
       }
 
-      main {
+      main#app {
         width: min(720px, calc(100vw - 32px));
         margin: 80px auto;
-      }
-
-      .screen {
         background: #fff;
         border: 1px solid #ddd;
         border-radius: 8px;
         padding: 28px;
-      }
-
-      button,
-      input,
-      textarea {
-        font: inherit;
-      }
-
-      button {
-        margin-top: 18px;
-        padding: 10px 14px;
-        border: 1px solid #222;
-        border-radius: 6px;
-        background: #222;
-        color: white;
-        cursor: pointer;
-      }
-
-      textarea {
-        display: block;
-        width: 100%;
-        min-height: 120px;
         box-sizing: border-box;
-        margin-top: 12px;
-        padding: 10px;
       }
 
-      label {
-        display: block;
-        margin: 12px 0;
+      /* jsPsych centers content full-viewport by default; keep the card layout. */
+      main#app.jspsych-display-element {
+        height: auto;
+        overflow-y: visible;
+      }
+
+      main#app .jspsych-content-wrapper {
+        height: auto;
       }
 
       .target {
@@ -66,12 +52,17 @@
         font-size: 32px;
       }
 
+      #target-area {
+        min-height: 140px;
+      }
+
       pre {
         white-space: pre-wrap;
         overflow-wrap: anywhere;
         background: #f0f0ed;
         padding: 16px;
         border-radius: 6px;
+        text-align: left;
       }
 
       .data-heading {
@@ -86,8 +77,20 @@
         margin: 0;
       }
 
-      .data-heading button {
-        margin-top: 0;
+      .prompt {
+        font-family: monospace;
+        font-size: 1rem;
+        background: #f0f0ed;
+        border-radius: 6px;
+        padding: 12px 14px;
+        line-height: 1.6;
+        user-select: none;
+      }
+
+      .consent-note {
+        font-size: 0.85em;
+        color: #555;
+        max-width: 42em;
       }
     </style>
   </head>
@@ -95,165 +98,11 @@
     <main id="app"></main>
 
     <script>
-      // ----------------------------------------------------------------------
-      // Recorder — emits the jsPsych `record_session` schema-v1 shape so this
-      // (non-jsPsych) prototype is compatible with the replay/detection pipeline.
-      // Schema pinned from a real record_session export (jsPsych 8.2.3):
-      //   top level: { schema_version, jspsych_version, recording_started_at(_perf),
-      //                user_agent, viewport, rng, display_element_id, stylesheets,
-      //                stylesheet_events, trials[], viewport_changes, rng_calls,
-      //                ended_at_perf, end_reason }
-      //   per trial: { trial_index, t_start, t_dom_ready, t_end, plugin,
-      //                initial_dom, events[], trial_data }
-      //   events (scope A — the detector-relevant subset):
-      //     mouse.move   {type,t,x,y}
-      //     mouse.down/up/click {type,t,x,y,button,target}
-      //     key.down/up  {type,t,key,code,mods:{ctrl,shift,alt,meta},repeat,target}
-      //     input.value  {type,t,node,value}
-      //     input.checked{type,t,node,checked}
-      //     scroll.window{type,t,x,y}
-      //
-      // Emulation caveats (vs. real jsPsych record_session):
-      //   - `target`/`node` are stable integer IDs assigned on demand; they do NOT
-      //     match jsPsych's DOM-snapshot numbering (we take no DOM snapshots here).
-      //   - `jspsych_version` is null and `initial_dom`/mutations/seeded-rng are
-      //     not reproduced. Fine for trace-based detection; not for the replay viewer.
-      //   - focus/visibility events use best-guess dotted types (marked below) —
-      //     confirm against a sample that triggers them before relying on the names.
-      // ----------------------------------------------------------------------
-      const app = document.querySelector("#app");
-      const data = [];
       const copyTypingTargetText =
         "The quick red fox typed three edited words before fixing the last phrase.";
 
-      const START_PERF = performance.now();
-      const now = () => performance.now() - START_PERF; // ms since recording start
-
-      const recording = {
-        schema_version: 1,
-        jspsych_version: null, // synthetic: this is not a jsPsych experiment
-        recording_started_at: new Date().toISOString(),
-        recording_started_at_perf: START_PERF,
-        user_agent: navigator.userAgent,
-        viewport: {
-          w: window.innerWidth,
-          h: window.innerHeight,
-          dpr: window.devicePixelRatio,
-          scale: 1,
-          offset_x: 0,
-          offset_y: 0
-        },
-        rng: { seed: null, math_random_patched: false },
-        display_element_id: "app",
-        stylesheets: [],
-        stylesheet_events: [],
-        trials: [],
-        viewport_changes: [],
-        rng_calls: [],
-        ended_at_perf: null,
-        end_reason: null
-      };
-
-      let currentTrial = null;
-      let currentTrialStart = performance.now();
-
-      // Stable integer ids for DOM nodes (does not match jsPsych's numbering).
-      const nodeIds = new WeakMap();
-      let nextNodeId = 1;
-      function nodeId(target) {
-        if (!(target instanceof Element)) return null;
-        if (!nodeIds.has(target)) nodeIds.set(target, nextNodeId++);
-        return nodeIds.get(target);
-      }
-
-      function emit(event) {
-        if (!currentTrial) return; // events before the first trial are dropped
-        // Rebuild so field order matches record_session exactly: type, t, then rest.
-        const { type, ...rest } = event;
-        currentTrial.events.push({ type, t: now(), ...rest });
-      }
-
-      function startTrial(plugin) {
-        if (currentTrial) currentTrial.t_end = now();
-        currentTrial = {
-          trial_index: recording.trials.length,
-          t_start: now(),
-          t_dom_ready: null,
-          t_end: null,
-          plugin,
-          initial_dom: null, // synthetic: no DOM snapshot in scope A
-          events: [],
-          trial_data: null
-        };
-        recording.trials.push(currentTrial);
-      }
-
-      function isCheckable(el) {
-        return el instanceof HTMLInputElement &&
-          (el.type === "checkbox" || el.type === "radio");
-      }
-
-      let pendingMouse = null;
-
-      function installRecorder() {
-        // Mouse position is sampled on requestAnimationFrame (~60Hz), matching
-        // record_session, rather than on every (throttled) mousemove.
-        document.addEventListener("mousemove", (e) => {
-          pendingMouse = { x: Math.round(e.clientX), y: Math.round(e.clientY) };
-        }, { passive: true });
-
-        function frame() {
-          if (pendingMouse) {
-            emit({ type: "mouse.move", x: pendingMouse.x, y: pendingMouse.y });
-            pendingMouse = null;
-          }
-          requestAnimationFrame(frame);
-        }
-        requestAnimationFrame(frame);
-
-        document.addEventListener("mousedown", (e) => {
-          emit({ type: "mouse.down", x: Math.round(e.clientX), y: Math.round(e.clientY), button: e.button, target: nodeId(e.target) });
-        });
-        document.addEventListener("mouseup", (e) => {
-          emit({ type: "mouse.up", x: Math.round(e.clientX), y: Math.round(e.clientY), button: e.button, target: nodeId(e.target) });
-        });
-        document.addEventListener("click", (e) => {
-          emit({ type: "mouse.click", x: Math.round(e.clientX), y: Math.round(e.clientY), button: e.button, target: nodeId(e.target) });
-        });
-
-        const mods = (e) => ({ ctrl: e.ctrlKey, shift: e.shiftKey, alt: e.altKey, meta: e.metaKey });
-        document.addEventListener("keydown", (e) => {
-          emit({ type: "key.down", key: e.key, code: e.code, mods: mods(e), repeat: e.repeat, target: nodeId(e.target) });
-        });
-        document.addEventListener("keyup", (e) => {
-          emit({ type: "key.up", key: e.key, code: e.code, mods: mods(e), repeat: e.repeat, target: nodeId(e.target) });
-        });
-
-        document.addEventListener("input", (e) => {
-          if (isCheckable(e.target)) {
-            emit({ type: "input.checked", node: nodeId(e.target), checked: e.target.checked });
-          } else {
-            emit({ type: "input.value", node: nodeId(e.target), value: e.target.value ?? null });
-          }
-        });
-
-        window.addEventListener("scroll", () => {
-          emit({ type: "scroll.window", x: window.scrollX, y: window.scrollY });
-        }, { passive: true });
-
-        window.addEventListener("resize", () => {
-          recording.viewport_changes.push({ t: now(), w: window.innerWidth, h: window.innerHeight });
-        });
-
-        // Tab-away / focus signals — dotted type names are BEST-GUESS (unconfirmed
-        // against the schema sample, which had no focus/blur events). Kept because
-        // tab-away is a detection signal; rename once confirmed against a real sample.
-        window.addEventListener("blur", () => emit({ type: "window.blur" }));
-        window.addEventListener("focus", () => emit({ type: "window.focus" }));
-        document.addEventListener("visibilitychange", () => {
-          emit({ type: "visibility.change", state: document.visibilityState });
-        });
-      }
+      // Set to your experiment ID from https://pipe.jspsych.org to enable automatic saving.
+      const DATAPIPE_EXPERIMENT_ID = "aTlT94EZ3bmc";
 
       function downloadFinalJson() {
         const dataElement = document.querySelector("#data");
@@ -272,157 +121,143 @@
         URL.revokeObjectURL(url);
       }
 
-      function setTrial(name) {
-        currentTrialStart = performance.now();
-        startTrial(name);
-        return name;
-      }
-
-      function record(trialType, values = {}) {
-        const entry = {
-          trial_type: trialType,
-          duration_ms: Math.round(performance.now() - currentTrialStart),
-          ...values
-        };
-        data.push(entry);
-        if (currentTrial) currentTrial.trial_data = entry;
-      }
-
-      function render(html) {
-        app.innerHTML = `<section class="screen">${html}</section>`;
-        if (currentTrial && currentTrial.t_dom_ready === null) {
-          currentTrial.t_dom_ready = now();
-        }
-      }
-
-      function showWelcome() {
-        setTrial("welcome");
-        render(`
-          <h1>Welcome</h1>
-          <p>This short experiment has a text question, a copy-typing task, a choice question, and a reaction-time task.</p>
-          <p style="font-size:0.85em;color:#555;max-width:42em;">This task records your mouse movements, clicks, and keystrokes (including the text you type) for research purposes. Continuing and submitting your data file indicates your consent.</p>
-          <button id="continue">Continue</button>
-        `);
-        document.querySelector("#continue").addEventListener("click", () => {
-          record("welcome");
-          showTextResponse();
-        });
-      }
-
-      function showTextResponse() {
-        setTrial("text-response");
-        render(`
-          <h1>Text response</h1>
-          <label for="text-response">What did you notice about this task?</label>
-          <textarea id="text-response" autocomplete="off"></textarea>
-          <button id="continue">Continue</button>
-        `);
-        document.querySelector("#continue").addEventListener("click", () => {
-          record("text-response", {
-            response: document.querySelector("#text-response").value
-          });
-          showCopyTyping();
-        });
-      }
-
-      function showCopyTyping() {
-        setTrial("copy-typing");
-        render(`
-          <h1>Copy typing</h1>
-          <p>Copy this sentence exactly:</p>
-          <p class="prompt">${copyTypingTargetText}</p>
-          <label for="copy-response">Copy response</label>
-          <textarea id="copy-response" autocomplete="off"></textarea>
-          <button id="continue">Continue</button>
-        `);
-        document.querySelector("#continue").addEventListener("click", () => {
-          const response = document.querySelector("#copy-response").value;
-          record("copy-typing", {
-            target_text: copyTypingTargetText,
-            response,
-            exact_match: response === copyTypingTargetText
-          });
-          showMultipleChoice();
-        });
-      }
-
-      function showMultipleChoice() {
-        setTrial("multiple-choice");
-        render(`
-          <h1>Multiple choice</h1>
-          <p>Which option best describes your current focus?</p>
-          <label><input type="radio" name="focus" value="low"> Low</label>
-          <label><input type="radio" name="focus" value="medium"> Medium</label>
-          <label><input type="radio" name="focus" value="high"> High</label>
-          <button id="continue">Continue</button>
-        `);
-        document.querySelector("#continue").addEventListener("click", () => {
-          const selected = document.querySelector("input[name='focus']:checked");
-          record("multiple-choice", {
-            response: selected ? selected.value : null
-          });
-          showReactionTime();
-        });
-      }
-
-      function showReactionTime(trialIndex = 0) {
-        setTrial("reaction-time");
-        const trialCount = 10;
-        const delayMs = Math.round(700 + Math.random() * 1000);
-        let targetShownAt = null;
-        let responded = false;
-
-        render(`
-          <h1>Reaction time</h1>
-          <p id="rt-instructions">Trial ${trialIndex + 1} of ${trialCount}: wait for the target, then press Space as quickly as you can.</p>
-          <div id="target-area"></div>
-        `);
-
-        const timeoutId = window.setTimeout(() => {
-          targetShownAt = performance.now();
-          document.querySelector("#target-area").innerHTML = `<div class="target">!</div>`;
-        }, delayMs);
-
-        function handleKeydown(event) {
-          if (event.code !== "Space" || responded) return;
-          responded = true;
-          window.clearTimeout(timeoutId);
-          document.removeEventListener("keydown", handleKeydown);
-          record("reaction-time", {
-            trial_index: trialIndex,
-            delay_ms: delayMs,
-            rt_ms: targetShownAt ? Math.round(performance.now() - targetShownAt) : null,
-            early_response: targetShownAt === null
-          });
-          if (trialIndex + 1 < trialCount) {
-            showReactionTime(trialIndex + 1);
-          } else {
-            showEnd();
-          }
-        }
-
-        document.addEventListener("keydown", handleKeydown);
-      }
-
       function showEnd() {
-        if (currentTrial) currentTrial.t_end = now();
-        recording.ended_at_perf = performance.now();
-        recording.end_reason = "experiment_finished";
-        // Expose like the real recorder so a Playwright driver can grab it.
+        const recording = jsPsych.getSessionRecording();
+        // Expose for Playwright drivers, matching the previous synthetic recorder.
         window._sessionRecording = recording;
 
-        render(`
+        const app = document.querySelector("#app");
+        app.innerHTML = `
           <h1>Done</h1>
           <div class="data-heading">
             <p>Collected data (record_session schema):</p>
-            <button type="button" onclick="downloadFinalJson()">Download JSON</button>
+            <button type="button" id="download" onclick="downloadFinalJson()">Download JSON</button>
           </div>
-          <pre id="data">${JSON.stringify(recording, null, 2)}</pre>
-        `);
+          <pre id="data"></pre>
+        `;
+        // The recording embeds DOM snapshots — set as text so markup can't render.
+        document.querySelector("#data").textContent = JSON.stringify(recording, null, 2);
+
+        if (DATAPIPE_EXPERIMENT_ID) {
+          fetch("https://pipe.jspsych.org/api/data/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              experimentID: DATAPIPE_EXPERIMENT_ID,
+              filename: `run-${Date.now()}.json`,
+              data: JSON.stringify(recording)
+            })
+          }).catch(err => console.warn("[datapipe] save failed:", err));
+        }
       }
 
-      installRecorder();
-      showWelcome();
+      const jsPsych = initJsPsych({
+        display_element: "app",
+        record_session: true,
+        on_finish: showEnd
+      });
+
+      // Survey plugins render their submit control as <input type="submit">,
+      // whose label is invisible to innerText-based screen readers (and was a
+      // visible <button> in the pre-jsPsych version of this experiment). Swap
+      // it for a real button; form submission behavior is unchanged.
+      function submitInputToButton() {
+        const input = document.querySelector('input[type="submit"].jspsych-btn');
+        if (!input) return;
+        const button = document.createElement("button");
+        button.type = "submit";
+        button.id = input.id;
+        button.className = input.className;
+        button.textContent = input.value;
+        input.replaceWith(button);
+      }
+
+      const timeline = [];
+
+      timeline.push({
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <h1>Welcome</h1>
+          <p>This short experiment has a text question, a copy-typing task, a choice question, and a reaction-time task.</p>
+          <p class="consent-note">This task records your mouse movements, clicks, and keystrokes (including the text you type) for research purposes. When you finish, your data is automatically saved to our research data repository; you can also download a personal copy. Continuing indicates your consent.</p>
+        `,
+        choices: ["Continue"],
+        data: { trial_type_label: "welcome" }
+      });
+
+      timeline.push({
+        type: jsPsychSurveyText,
+        preamble: "<h1>Text response</h1>",
+        questions: [{
+          prompt: "What did you notice about this task?",
+          name: "text_response",
+          rows: 5,
+          columns: 60
+        }],
+        button_label: "Continue",
+        on_load: submitInputToButton,
+        data: { trial_type_label: "text-response" }
+      });
+
+      timeline.push({
+        type: jsPsychSurveyText,
+        preamble: `
+          <h1>Copy typing</h1>
+          <p>Copy this sentence exactly:</p>
+          <p class="prompt">${copyTypingTargetText}</p>
+        `,
+        questions: [{
+          prompt: "Copy response",
+          name: "copy_response",
+          rows: 5,
+          columns: 60
+        }],
+        button_label: "Continue",
+        on_load: submitInputToButton,
+        data: { trial_type_label: "copy-typing", target_text: copyTypingTargetText },
+        on_finish: (data) => {
+          data.exact_match = data.response?.copy_response === copyTypingTargetText;
+        }
+      });
+
+      timeline.push({
+        type: jsPsychSurveyMultiChoice,
+        preamble: "<h1>Multiple choice</h1>",
+        questions: [{
+          prompt: "Which option best describes your current focus?",
+          name: "focus",
+          options: ["Low", "Medium", "High"],
+          required: false
+        }],
+        button_label: "Continue",
+        on_load: submitInputToButton,
+        data: { trial_type_label: "multiple-choice" }
+      });
+
+      const rtTrialCount = 10;
+      for (let rtIndex = 0; rtIndex < rtTrialCount; rtIndex++) {
+        const instructions = `
+          <h1>Reaction time</h1>
+          <p id="rt-instructions">Trial ${rtIndex + 1} of ${rtTrialCount}: wait for the target, then press Space as quickly as you can.</p>
+        `;
+
+        timeline.push({
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: instructions + `<div id="target-area"></div>`,
+          choices: "NO_KEYS",
+          trial_duration: () => Math.round(700 + Math.random() * 1000),
+          data: { trial_type_label: "reaction-time-wait", rt_trial_index: rtIndex }
+        });
+
+        timeline.push({
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: instructions + `<div id="target-area"><div class="target">!</div></div>`,
+          choices: [" "],
+          data: { trial_type_label: "reaction-time", rt_trial_index: rtIndex }
+        });
+      }
+
+      jsPsych.run(timeline);
     </script>
   </body>
 </html>
