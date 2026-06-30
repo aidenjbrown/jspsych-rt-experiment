@@ -261,11 +261,18 @@ function startMotionPhase() {
   });
 
   function showFinalResult(missRate) {
+    const perfectAim = trialLog.some(t =>
+      t.hit && t.click_pos &&
+      Math.hypot(t.circle_pos.x - t.click_pos.x, t.circle_pos.y - t.click_pos.y) < 3
+    );
     const motionResult = { n_trials: TRIALS, hits, misses,
-      miss_rate: missRate, bot_suspected: missRate > BOT_THRESHOLD, trials: trialLog };
+      miss_rate: missRate, perfect_aim: perfectAim,
+      bot_suspected: missRate > BOT_THRESHOLD || perfectAim, trials: trialLog };
 
     const lv = latencyResult.bot_suspected ? 'BOT SUSPECTED' : 'HUMAN';
-    const mv = motionResult.bot_suspected   ? 'BOT SUSPECTED' : 'HUMAN';
+    const mv = motionResult.bot_suspected
+      ? (perfectAim ? 'BOT SUSPECTED (perfect aim)' : 'BOT SUSPECTED')
+      : 'HUMAN';
     const lMissed = `${latencyResult.missed_count}/${latencyResult.n_trials} missed` +
       (latencyResult.median_rt ? ` | median RT ${latencyResult.median_rt}ms` : '');
     const mHits = `${motionResult.hits}/${motionResult.n_trials} hits`;
