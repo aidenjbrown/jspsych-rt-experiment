@@ -194,6 +194,7 @@ function startMotionPhase() {
     if (!frozen) {
       if (now >= freezeAt) {
         frozen = true; deadlineAt = now + DEADLINE_MS;
+        window._botState = { frozen: true, trialActive: true, cx, cy };
         document.getElementById('status').textContent = '→ Click it!';
         ctx.clearRect(0, 0, W, H);
         ctx.beginPath(); ctx.arc(cx, cy, RADIUS + 8, 0, Math.PI * 2);
@@ -219,7 +220,8 @@ function startMotionPhase() {
   }
 
   function recordResult(hit, clickX, clickY) {
-    trialActive = false; cancelAnimationFrame(animId);
+    trialActive = false; window._botState = { frozen: false, trialActive: false };
+    cancelAnimationFrame(animId);
     if (hit) {
       hits++; document.getElementById('status').textContent = '✓ Hit!';
       drawCircle('#2b8a3e'); canvas.style.borderColor = '#2b8a3e';
