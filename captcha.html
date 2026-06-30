@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Response Time Tasks</title>
+  <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/dist/index.browser.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/css/jspsych.css">
+  <style>
+    body { background: #f7f7f5; font-family: sans-serif; margin: 0; }
+    .panel { max-width: 560px; margin: 60px auto; background: white;
+             border: 1px solid #ddd; border-radius: 8px; padding: 2em; }
+    h2 { margin-top: 0; }
+    p { color: #444; line-height: 1.6; }
+    .btn { padding: 0.6em 1.6em; font-size: 1em; background: #339af0;
+           color: white; border: none; border-radius: 6px; cursor: pointer; }
+    canvas { display: block; border: 2px solid #ccc; border-radius: 6px;
+             background: #f8f9fa; cursor: crosshair; }
+    .pass { color: #2b8a3e; font-weight: bold; }
+    .fail { color: #c92a2a; font-weight: bold; }
+    textarea { width: 100%; box-sizing: border-box; font-family: monospace;
+               font-size: 0.85em; padding: 0.8em; border: 1px solid #ccc;
+               border-radius: 4px; background: #f8f9fa; resize: vertical; }
+    details summary { cursor: pointer; color: #888; font-size: 0.9em;
+                      margin-top: 1.5em; }
+  </style>
+</head>
+<body>
+
+<div class="panel" id="welcome">
+  <h2>Response Time Tasks</h2>
+  <p>This is a short test (~2 minutes) with two tasks:</p>
+  <ol>
+    <li><strong>Reaction Time Task</strong> — Press Space when a dot appears on screen. 10 trials, about 20 seconds.</li>
+    <li><strong>Moving Target Task</strong> — Click a moving circle when it stops. 5 trials, about 90 seconds.</li>
+  </ol>
+  <p>At the end you will see a results screen. Please copy the text from the box and send it to Aiden.</p>
+  <button class="btn" onclick="startLatencyPhase()">Start</button>
+</div>
+
+<script>
+// ---- Latency CAPTCHA plugin (inlined from plugins/jspsych-latency-captcha.js) ----
+var jsPsychLatencyCaptcha = (function (jspsych) {
+  "use strict";
+  const info = {
+    name: "latency-captcha",
+    parameters: {
+      n_trials:          { type: jspsych.ParameterType.INT,   default: 10 },
+      deadline_ms:       { type: jspsych.ParameterType.INT,   default: 500 },
+      bot_threshold:     { type: jspsych.ParameterType.FLOAT, default: 0.5 },
+      fixation_duration: { type: jspsych.ParameterType.INT,   default: 500 },
+      response_key:      { type: jspsych.ParameterType.KEY,   default: " " },
+    },
+  };
+
+  class LatencyCaptchaPlugin {
+    constructor(jsPsych) { this.jsPsych = jsPsych; }
+
+    trial(display_element, trial) {
+      const results = [];
+      let trialIdx = 0;
+
+      const runOneTrial = () => {
+        if (trialIdx >= trial.n_trials) { finish(); return; }
+        display_element.innerHTML = `
+          <div style="display:flex;align-items:center;justify-content:center;
+                      height:200px;font-size:48px;color:#333;">+</div>`;
+        this.jsPsych.pluginAPI.setTimeout(() => {
+          const t0 = performance.now();
+          display_element.innerHTML = `
+            <div style="display:flex;align-items:center;justify-content:center;
+                        height:200px;font-size:72px;color:#1864ab;">●</div>
+            <p style="text-align:center;color:#888;font-family:sans-serif;">
+              Press Space as quickly as possible</p>`;
+          let responded = false;
+          const keyListener = this.jsPsych.pluginAPI.getKeyboardResponse({
+            callback_function: () => {
+              if (responded) return;
+              responded = true;
+              this.jsPsych.pluginAPI.clearAllTimeouts();
+              results.push({ trial: trialIdx, rt: Math.round(performance.now() - t0), missed: false });
+              trialIdx++;
+              runOneTrial();
+            },
+            valid_responses: [trial.response_key, " "],
+            persist: false,
+          });
+          this.jsPsych.pluginAPI.setTimeout(() => {
+            if (responded) return;
+            responded = true;
+            this.jsPsych.pluginAPI.cancelKeyboardResponse(keyListener);
+            results.push({ trial: trialIdx, rt: null, missed: true });
+            trialIdx++;
+            runOneTrial();
+          }, trial.deadline_ms);
+        }, trial.fixation_duration);
+      };
+
+      const finish = () => {
+        display_element.innerHTML = "";
+        this.jsPsych.pluginAPI.clearAllTimeouts();
+        const missed_count = results.filter(r => r.missed).length;
+        const missed_fraction = missed_count / trial.n_trials;
+        const hit_rts = results.filter(r => !r.missed).map(r => r.rt).sort((a, b) => a - b);
+        const median_rt = hit_rts.length > 0 ? hit_rts[Math.floor(hit_rts.length / 2)] : null;
+        this.jsPsych.finishTrial({
+          trials: results, n_trials: trial.n_trials, deadline_ms: trial.deadline_ms,
+          missed_count, missed_fraction, median_rt,
+          bot_suspected: missed_fraction >= trial.bot_threshold,
+        });
+      };
+
+      runOneTrial();
+    }
+  }
+
+  LatencyCaptchaPlugin.info = info;
+  return LatencyCaptchaPlugin;
+})(jsPsychModule);
+
+// ---- State ----
+let latencyResult = null;
+
+// ---- Phase 1: Latency CAPTCHA ----
+function startLatencyPhase() {
+  document.getElementById('welcome').style.display = 'none';
+  const jsPsych = initJsPsych({
+    on_finish: () => {
+      latencyResult = jsPsych.data.get().last(1).values()[0];
+      startMotionPhase();
+    },
+  });
+  jsPsych.run([{
+    type: jsPsychLatencyCaptcha,
+    n_trials: 10,
+    deadline_ms: 500,
+    bot_threshold: 0.5,
+    fixation_duration: 500,
+  }]);
+}
+
+// ---- Phase 2: Motion CAPTCHA ----
+function startMotionPhase() {
+  document.body.innerHTML = `
+    <div class="panel">
+      <h2>Moving Target Task</h2>
+      <p style="color:#555;margin-bottom:1em">
+        Watch the grey circle move. When it <strong>stops</strong>, click on it as quickly as you can.</p>
+      <div id="status" style="font-size:1.1em;font-weight:bold;min-height:1.5em;
+                               margin-bottom:0.5em;color:#333">Press Start when ready.</div>
+      <canvas id="canvas" width="480" height="320"></canvas>
+      <div id="progress" style="margin-top:0.8em;color:#888;font-size:0.9em"></div>
+      <button class="btn" id="start-btn" style="margin-top:1em">Start</button>
+    </div>`;
+  document.body.style.cssText = 'background:#f7f7f5;font-family:sans-serif;margin:0';
+
+  const TRIALS = 5, RADIUS = 28, SPEED = 160;
+  const FREEZE_MIN = 1800, FREEZE_MAX = 3800, DEADLINE_MS = 2000, BOT_THRESHOLD = 0.5;
+
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  let trialIndex = 0, hits = 0, misses = 0;
+  const trialLog = [];
+  let cx, cy, vx, vy, frozen, freezeAt, deadlineAt, trialActive, animId, lastTime;
+
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+
+  function drawCircle(color) {
+    ctx.clearRect(0, 0, W, H);
+    ctx.beginPath(); ctx.arc(cx, cy, RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  function startTrial() {
+    trialActive = true; frozen = false;
+    cx = rnd(RADIUS + 20, W - RADIUS - 20);
+    cy = rnd(RADIUS + 20, H - RADIUS - 20);
+    const angle = rnd(0, Math.PI * 2);
+    vx = Math.cos(angle) * SPEED; vy = Math.sin(angle) * SPEED;
+    freezeAt = performance.now() + rnd(FREEZE_MIN, FREEZE_MAX);
+    deadlineAt = null;
+    document.getElementById('status').textContent = 'Moving…';
+    document.getElementById('progress').textContent = `Trial ${trialIndex + 1} of ${TRIALS}`;
+    lastTime = null;
+    animId = requestAnimationFrame(animate);
+  }
+
+  function animate(now) {
+    if (!trialActive) return;
+    const dt = lastTime ? (now - lastTime) / 1000 : 0;
+    lastTime = now;
+    if (!frozen) {
+      if (now >= freezeAt) {
+        frozen = true; deadlineAt = now + DEADLINE_MS;
+        document.getElementById('status').textContent = '→ Click it!';
+        ctx.clearRect(0, 0, W, H);
+        ctx.beginPath(); ctx.arc(cx, cy, RADIUS + 8, 0, Math.PI * 2);
+        ctx.strokeStyle = '#339af0'; ctx.lineWidth = 4; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#868e96'; ctx.fill();
+        animId = requestAnimationFrame(checkDeadline); return;
+      }
+      cx += vx * dt; cy += vy * dt;
+      if (cx - RADIUS < 0)  { cx = RADIUS;     vx =  Math.abs(vx); }
+      if (cx + RADIUS > W)  { cx = W - RADIUS; vx = -Math.abs(vx); }
+      if (cy - RADIUS < 0)  { cy = RADIUS;     vy =  Math.abs(vy); }
+      if (cy + RADIUS > H)  { cy = H - RADIUS; vy = -Math.abs(vy); }
+      drawCircle('#adb5bd');
+      animId = requestAnimationFrame(animate);
+    }
+  }
+
+  function checkDeadline(now) {
+    if (!trialActive) return;
+    if (now >= deadlineAt) { recordResult(false, null, null); return; }
+    animId = requestAnimationFrame(checkDeadline);
+  }
+
+  function recordResult(hit, clickX, clickY) {
+    trialActive = false; cancelAnimationFrame(animId);
+    if (hit) {
+      hits++; document.getElementById('status').textContent = '✓ Hit!';
+      drawCircle('#2b8a3e'); canvas.style.borderColor = '#2b8a3e';
+    } else {
+      misses++; document.getElementById('status').textContent = '✗ Missed';
+      ctx.clearRect(0, 0, W, H);
+      ctx.beginPath(); ctx.arc(cx, cy, RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#ff6b6b'; ctx.fill();
+      ctx.strokeStyle = '#c92a2a'; ctx.lineWidth = 4; ctx.stroke();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - 12, cy - 12); ctx.lineTo(cx + 12, cy + 12);
+      ctx.moveTo(cx + 12, cy - 12); ctx.lineTo(cx - 12, cy + 12);
+      ctx.stroke(); canvas.style.borderColor = '#c92a2a';
+    }
+    trialLog.push({ trial: trialIndex + 1, hit,
+      circle_pos: { x: Math.round(cx), y: Math.round(cy) },
+      click_pos: clickX !== null ? { x: Math.round(clickX), y: Math.round(clickY) } : null });
+    trialIndex++;
+    if (trialIndex < TRIALS) {
+      setTimeout(() => { canvas.style.borderColor = '#ccc'; startTrial(); }, 1500);
+    } else {
+      setTimeout(() => showFinalResult(misses / TRIALS), 1000);
+    }
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (!trialActive || !frozen) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    recordResult(Math.hypot(mx - cx, my - cy) <= RADIUS * 1.5, mx, my);
+  });
+
+  document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-btn').style.display = 'none';
+    startTrial();
+  });
+
+  function showFinalResult(missRate) {
+    const motionResult = { n_trials: TRIALS, hits, misses,
+      miss_rate: missRate, bot_suspected: missRate > BOT_THRESHOLD, trials: trialLog };
+
+    const lv = latencyResult.bot_suspected ? 'BOT SUSPECTED' : 'HUMAN';
+    const mv = motionResult.bot_suspected   ? 'BOT SUSPECTED' : 'HUMAN';
+    const lMissed = `${latencyResult.missed_count}/${latencyResult.n_trials} missed` +
+      (latencyResult.median_rt ? ` | median RT ${latencyResult.median_rt}ms` : '');
+    const mHits = `${motionResult.hits}/${motionResult.n_trials} hits`;
+
+    const copyText =
+      `Latency CAPTCHA — ${lMissed} | ${lv}\n` +
+      `Motion CAPTCHA  — ${mHits} | ${mv}`;
+
+    document.body.innerHTML = `
+      <div class="panel">
+        <h2>All done — thank you!</h2>
+        <p>Please copy the text below and send it to Aiden.</p>
+        <textarea rows="3" readonly onclick="this.select()">${copyText}</textarea>
+        <details>
+          <summary>Full JSON (optional)</summary>
+          <textarea rows="12" readonly onclick="this.select()" style="margin-top:0.5em">${
+            JSON.stringify({ latency: latencyResult, motion: motionResult }, null, 2)}</textarea>
+        </details>
+      </div>`;
+    document.body.style.cssText = 'background:#f7f7f5;font-family:sans-serif;margin:0';
+  }
+}
+</script>
+</body>
+</html>
