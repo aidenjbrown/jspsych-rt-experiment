@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Reverse Shibboleth Task</title>
+  <style>
+    body { background: #f7f7f5; font-family: sans-serif; }
+    #container { max-width: 560px; margin: 60px auto; background: white;
+                 border: 1px solid #ddd; border-radius: 8px; padding: 2em; }
+    h2 { margin-top: 0; }
+    #progress { color: #888; font-size: 0.9em; margin-bottom: 1em; }
+    #prompt { font-size: 1.1em; margin-bottom: 1.5em; line-height: 1.5; }
+    #answer-input { width: 100%; box-sizing: border-box; padding: 0.6em;
+                    font-size: 1em; border: 1px solid #ccc; border-radius: 6px;
+                    margin-bottom: 1em; }
+    #controls { display: flex; gap: 10px; margin-bottom: 1.5em; }
+    button { padding: 0.5em 1.2em; font-size: 1em; border-radius: 6px;
+             cursor: pointer; border: none; }
+    #skip-btn { background: #f1f3f5; color: #333; border: 1px solid #ccc; }
+    #submit-btn, #begin-btn { background: #339af0; color: white; }
+    #submit-btn:disabled { background: #a5d8ff; cursor: default; }
+    #result { font-family: monospace; padding: 1em; background: #f8f9fa;
+              border: 1px solid #ddd; border-radius: 6px; }
+    #result h2 { margin-top: 0; }
+    #download { margin-bottom: 1em; background: #339af0; color: white; }
+    .consent-note { font-size: 0.85em; color: #555; }
+  </style>
+</head>
+<body>
+<div id="container">
+  <h2>Reverse Shibboleth Task</h2>
+  <p>This short task has 4 questions. Answer if you know, or skip if you don't &mdash; there's no penalty for skipping, and guessing isn't necessary.</p>
+  <p class="consent-note">This task records your answers and response time for research purposes. When you finish, your data is automatically saved to our research data repository; you can also download a personal copy. Continuing indicates your consent.</p>
+  <button id="begin-btn" type="button">Begin</button>
+</div>
+
+<script>
+  // Reverse-shibboleth items: questions an LLM answers instantly and exactly,
+  // that a typical human respondent would not know offhand (would guess, skip,
+  // or answer imprecisely). Correctness gap + response latency are the signals.
+  const items = [
+    {
+      id: 'diet-of-worms',
+      type: 'obscure fact',
+      prompt: 'In what year was the Diet of Worms (the imperial assembly where Martin Luther was tried for heresy) held?',
+      grade: (a) => a.trim() === '1521',
+    },
+    {
+      id: 'mercury-freezing',
+      type: 'obscure fact',
+      prompt: 'What is the freezing point of mercury in degrees Celsius, to two decimal places?',
+      grade: (a) => {
+        const n = parseFloat(a);
+        return !isNaN(n) && Math.abs(n - -38.83) <= 0.05;
+      },
+    },
+    {
+      id: 'pi-digits',
+      type: 'digit sequence recall',
+      prompt: 'Recite the first 30 digits of pi (π) after the decimal point. (For example, the first 3 digits would be "141".)',
+      // Graded on the longest correct run from the start, not an exact 30/30 match —
+      // 20+ consecutive correct digits still separates from unaided human recall.
+      grade: (a) => {
+        const truth = '141592653589793238462643383279';
+        const digits = a.replace(/[^0-9]/g, '');
+        let n = 0;
+        while (n < digits.length && n < truth.length && digits[n] === truth[n]) n++;
+        return n >= 20;
+      },
+    },
+    {
+      id: 'pbkdf2',
+      type: 'specialized jargon',
+      prompt: "In cryptography, what does the acronym \"PBKDF2\" stand for?",
+      grade: (a) => {
+        const t = a.toLowerCase();
+        return t.includes('password') && t.includes('key derivation');
+      },
+    },
+  ];
+
+  let current = 0;
+  const results = [];
+  let displayTime = null;
+
+  function render() {
+    const item = items[current];
+    document.getElementById('container').innerHTML = `
+      <h2>Reverse Shibboleth Task</h2>
+      <div id="progress">Question ${current + 1} of ${items.length}</div>
+      <div id="prompt">${item.prompt}</div>
+      <div id="input-area">
+        <input type="text" id="answer-input" autocomplete="off" placeholder="Your answer" aria-label="Your answer">
+        <div id="controls">
+          <button id="skip-btn">Skip / I don't know</button>
+          <button id="submit-btn" disabled>Submit</button>
+        </div>
+      </div>`;
+    const input = document.getElementById('answer-input');
+    const submitBtn = document.getElementById('submit-btn');
+    input.addEventListener('input', () => { submitBtn.disabled = input.value.trim() === ''; });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !submitBtn.disabled) submit(); });
+    document.getElementById('skip-btn').onclick = skip;
+    submitBtn.onclick = submit;
+    input.focus();
+    displayTime = Date.now();
+  }
+
+  function recordAndAdvance(answer, skipped) {
+    const item = items[current];
+    const rt_ms = Date.now() - displayTime;
+    const correct = skipped ? false : !!item.grade(answer);
+    results.push({ id: item.id, type: item.type, answer: skipped ? null : answer, skipped, correct, rt_ms });
+
+    current++;
+    if (current < items.length) {
+      setTimeout(render, 400);
+    } else {
+      showResult();
+    }
+  }
+
+  function submit() {
+    const answer = document.getElementById('answer-input').value;
+    recordAndAdvance(answer, false);
+  }
+
+  function skip() {
+    recordAndAdvance('', true);
+  }
+
+  // DataPipe experiment for this task's summary JSON — separate from index.html's
+  // record_session experiment since the payload shape differs (no top-level trial_type).
+  const DATAPIPE_EXPERIMENT_ID = 'uAcTsUmqpX2R';
+
+  function showResult() {
+    const nCorrect = results.filter(r => r.correct).length;
+    const rts = results.map(r => r.rt_ms).sort((a, b) => a - b);
+    const meanRt = Math.round(rts.reduce((a, b) => a + b, 0) / rts.length);
+    const medianRt = rts[Math.floor(rts.length / 2)];
+    const summary = { n_items: items.length, n_correct: nCorrect, mean_rt_ms: meanRt, median_rt_ms: medianRt, results };
+
+    document.getElementById('container').innerHTML = `
+      <div id="result">
+        <h2>Reverse Shibboleth Task — Results</h2>
+        <p>Correct: ${nCorrect} / ${items.length}</p>
+        <p>Mean RT: ${meanRt} ms &nbsp;|&nbsp; Median RT: ${medianRt} ms</p>
+        <p>Thanks for participating!</p>
+        <button type="button" id="download" onclick="downloadResult()">Download JSON</button>
+        <pre id="data">${JSON.stringify(summary, null, 2)}</pre>
+      </div>`;
+
+    if (DATAPIPE_EXPERIMENT_ID) {
+      fetch('https://pipe.jspsych.org/api/data/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          experimentID: DATAPIPE_EXPERIMENT_ID,
+          filename: `reverse-shibboleth-${Date.now()}.json`,
+          data: JSON.stringify(summary)
+        })
+      }).catch(err => console.warn('[datapipe] save failed:', err));
+    }
+  }
+
+  function downloadResult() {
+    const dataElement = document.querySelector('#data');
+    if (!dataElement) return;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const blob = new Blob([dataElement.textContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reverse-shibboleth-${timestamp}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('begin-btn').onclick = render;
+</script>
+</body>
+</html>
