@@ -1,12 +1,30 @@
-# Behavioral task (reaction-time + copy-typing)
+# jspsych-rt-experiment
 
-A short (~1 minute) browser experiment for research data collection. Please
-complete it **3 times**. Open the live page each time and complete the task
-naturally.
+Browser-based reaction-time and copy-typing experiment for collecting human baseline data in bot-detection research.
 
-Live page: https://aidenjbrown.github.io/jspsych-rt-experiment/
+## Overview
 
-The page records interaction events (mouse, keyboard, timing) in your browser
-using the jsPsych `record_session` schema. When you finish, your data is
-automatically saved to the research team's OSF project. You can also use the
-**Download JSON** button on the final screen to keep a personal copy.
+This project was built as part of URSI research at Vassar studying whether browser-based psychology experiments can distinguish human participants from automated browser agents.
+
+The experiment collects interaction data such as reaction time, keyboard events, mouse movement, and task timing. These human baseline sessions can then be compared against scripted or LLM/browser-agent sessions.
+
+## Features
+
+- Reaction-time task built with jsPsych
+- Copy-typing task for behavioral data collection
+- Browser interaction recording using the jsPsych `record_session` schema
+- Optional JSON download for local session records
+- GitHub Pages deployment for browser-based testing
+
+## Tech Stack
+
+- HTML/CSS/JavaScript
+- jsPsych
+- GitHub Pages
+- Browser-based experiment tooling
+
+## Status
+
+Research prototype developed during Vassar's Undergraduate Research Summer Institute.
+
+This repository is a public-facing experiment prototype. The main URSI bot-evaluation codebase is private.
