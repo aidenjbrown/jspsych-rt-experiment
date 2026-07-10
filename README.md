@@ -10,6 +10,7 @@ behavior.
 - **Reaction-time + copy-typing task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/) · `index.html`) — a ~1 minute task with a text question, a copy-typing task, a choice question, and a reaction-time task.
 - **Latency / motion CAPTCHA task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/captcha.html) · `captcha.html`) — timed response and moving-target click tasks.
 - **Reverse-shibboleth task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/reverse-shibboleth.html) · `reverse-shibboleth.html`) — a short 4-question task testing recall of specific facts, constants, and terminology.
+- **Pursuit + maze tracking task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/pursuit-maze.html) · `pursuit-maze.html`) — two ~12-second mouse-tracking trials: following a bouncing circle, then following a dot along a visible winding path.
 
 Each page records the behavioral signals relevant to its task (mouse movement,
 keystrokes, timing, or response accuracy) and saves data automatically to the

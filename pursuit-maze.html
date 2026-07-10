@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mouse Tracking Task</title>
+  <script src="https://unpkg.com/jspsych@7.3.4"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych/extension-mouse-tracking@1.0.3"></script>
+  <link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css">
+  <style>
+    body { background: #f7f7f5; font-family: sans-serif; }
+    #consent-container { max-width: 560px; margin: 60px auto; background: white;
+                 border: 1px solid #ddd; border-radius: 8px; padding: 2em; }
+    #consent-container h2 { margin-top: 0; }
+    #begin-btn { padding: 0.5em 1.2em; font-size: 1em; border-radius: 6px;
+             cursor: pointer; border: none; background: #339af0; color: white; }
+    .consent-note { font-size: 0.85em; color: #555; }
+    canvas { display: block; margin: 20px auto; border: 2px solid #ccc;
+             border-radius: 4px; background: #f8f9fa; cursor: crosshair; }
+    #maze-canvas { background: #ffffff; }
+    #task-complete { font-family: monospace; padding: 32px; max-width: 700px; margin: auto; }
+    #task-complete pre { background: #f4f4f4; padding: 12px; border-radius: 4px;
+                          white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+<div id="consent-container">
+  <h2>Mouse Tracking Task</h2>
+  <p>This task has two short parts. In each part, a shape will move on screen for 12 seconds &mdash; follow it as closely as you can with your mouse.</p>
+  <p class="consent-note">This task records your mouse movements during the task for research purposes. When you finish, your data is automatically saved to our research data repository. Continuing indicates your consent.</p>
+  <button id="begin-btn" type="button">Begin</button>
+</div>
+<div id="jspsych-target" style="display:none;"></div>
+<script>
+  // DataPipe experiment for this task's combined pursuit+maze summary JSON.
+  const DATAPIPE_EXPERIMENT_ID = '7xclZxuv5U9T';
+
+  // Declared here (top-level script scope) so every trial object below — including
+  // results.on_load — can see it via normal lexical scoping. Assigned (not declared)
+  // inside the Begin-button handler once the consent screen is dismissed.
+  let jsPsych;
+
+  // ===========================================================================
+  // Pursuit task (adapted from pursuit-test.html)
+  // ===========================================================================
+  const P_SPEED    = 160;   // px/s
+  const P_RADIUS   = 28;
+  const P_TRIAL_MS = 12000;
+  const P_W = 640, P_H = 400;
+
+  let _pursuitTargetPath = [];
+  let _pursuitCanvasRect = null;
+  let _pursuitAnimId = null;
+  let _pursuitBounceTimes = [];
+
+  var pursuitInstructions = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus:
+      '<div style="max-width:560px; margin:auto; font-size:18px; line-height:1.7;">' +
+      '<h2 style="margin-top:0;">Part 1: Continuous Pursuit</h2>' +
+      '<p>A circle will move around the screen continuously for 12 seconds.</p>' +
+      '<p>Move your mouse to follow the circle as closely as possible throughout ' +
+      'the entire trial. Try to keep your cursor on the circle at all times.</p>' +
+      '<p style="margin-top:24px;">Press any key to begin.</p>' +
+      '</div>',
+    choices: 'ALL_KEYS'
+  };
+
+  var pursuitTrial = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<canvas id="pursuit-canvas" width="' + P_W + '" height="' + P_H + '"></canvas>' +
+              '<p style="text-align:center; color:#888; font-size:14px; margin-top:4px;">' +
+              'Follow the circle with your mouse</p>',
+    choices: 'NO_KEYS',
+    trial_duration: P_TRIAL_MS,
+    extensions: [{ type: jsPsychExtensionMouseTracking, params: { minimum_sample_time: 0 } }],
+
+    on_load: function () {
+      const canvas = document.getElementById('pursuit-canvas');
+      const ctx    = canvas.getContext('2d');
+      _pursuitCanvasRect = canvas.getBoundingClientRect();
+
+      let cx = P_W / 2 + (Math.random() - 0.5) * 200;
+      let cy = P_H / 2 + (Math.random() - 0.5) * 150;
+      const angle = Math.random() * Math.PI * 2;
+      let vx = Math.cos(angle) * P_SPEED;
+      let vy = Math.sin(angle) * P_SPEED;
+
+      _pursuitTargetPath = [];
+      _pursuitBounceTimes = [];
+      const trialStart = performance.now();
+      let lastTime = null;
+
+      function animate(now) {
+        const dt = lastTime ? (now - lastTime) / 1000 : 0;
+        lastTime = now;
+
+        cx += vx * dt;
+        cy += vy * dt;
+
+        let bounced = false;
+        if (cx - P_RADIUS < 0)  { cx = P_RADIUS;       vx =  Math.abs(vx); bounced = true; }
+        if (cx + P_RADIUS > P_W) { cx = P_W - P_RADIUS; vx = -Math.abs(vx); bounced = true; }
+        if (cy - P_RADIUS < 0)  { cy = P_RADIUS;       vy =  Math.abs(vy); bounced = true; }
+        if (cy + P_RADIUS > P_H) { cy = P_H - P_RADIUS; vy = -Math.abs(vy); bounced = true; }
+        if (bounced) _pursuitBounceTimes.push(Math.round(now - trialStart));
+
+        _pursuitTargetPath.push({ t: Math.round(now - trialStart), cx, cy });
+
+        ctx.clearRect(0, 0, P_W, P_H);
+        ctx.beginPath();
+        ctx.arc(cx, cy, P_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#868e96';
+        ctx.fill();
+        ctx.strokeStyle = '#495057';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        _pursuitAnimId = requestAnimationFrame(animate);
+      }
+
+      _pursuitAnimId = requestAnimationFrame(animate);
+    },
+
+    on_finish: function (data) {
+      if (_pursuitAnimId) { cancelAnimationFrame(_pursuitAnimId); _pursuitAnimId = null; }
+
+      const moves = (data.mouse_tracking_data || []).filter(e => e.event === 'mousemove');
+      const path  = _pursuitTargetPath || [];
+      const rect  = _pursuitCanvasRect || { left: 0, top: 0 };
+
+      const distances = [];
+      const rawTrace = [];
+      for (const mv of moves) {
+        const t = mv.t;
+        let lo = 0, hi = path.length - 1;
+        while (lo < hi - 1) {
+          const mid = (lo + hi) >> 1;
+          if (path[mid].t <= t) lo = mid; else hi = mid;
+        }
+        const before = path[lo], after = path[hi];
+        let tcx, tcy;
+        if (!before) { tcx = after.cx; tcy = after.cy; }
+        else if (!after || before.t === after.t) { tcx = before.cx; tcy = before.cy; }
+        else {
+          const f = (t - before.t) / (after.t - before.t);
+          tcx = before.cx + f * (after.cx - before.cx);
+          tcy = before.cy + f * (after.cy - before.cy);
+        }
+        const curX = mv.x - rect.left;
+        const curY = mv.y - rect.top;
+        distances.push(Math.sqrt((curX - tcx) ** 2 + (curY - tcy) ** 2));
+        rawTrace.push({ t, curX: +curX.toFixed(1), curY: +curY.toFixed(1), tcx: +tcx.toFixed(1), tcy: +tcy.toFixed(1) });
+      }
+      data.raw_trace = rawTrace;
+      data.bounce_times = _pursuitBounceTimes;
+
+      const timestamps = moves.map(m => m.t);
+      const gaps = [];
+      for (let i = 1; i < timestamps.length; i++) gaps.push(timestamps[i] - timestamps[i - 1]);
+      const shortGaps = gaps.filter(g => g < 100);
+      const longGaps  = gaps.filter(g => g >= 100);
+      const mean = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+      const pct  = (arr, p) => arr.length ? [...arr].sort((a,b)=>a-b)[Math.floor(arr.length * p)] : null;
+
+      data.n_events       = moves.length;
+      data.mean_distance  = distances.length ? mean(distances) : null;
+      data.p90_distance   = distances.length ? pct(distances, 0.9) : null;
+      data.n_short_gaps   = shortGaps.length;
+      data.n_long_gaps    = longGaps.length;
+      data.gap_mean_short = mean(shortGaps);
+      data.gap_mean_long  = mean(longGaps);
+      data.gap_sd_long    = longGaps.length > 1
+        ? Math.sqrt(longGaps.map(g => (g - mean(longGaps)) ** 2).reduce((s,v)=>s+v,0) / longGaps.length)
+        : null;
+      data.raw_gaps       = gaps;
+      data.task           = 'pursuit';
+    }
+  };
+
+  function computePursuitVerdict(d) {
+    const GAP_MEAN_LONG_MS   = 800;
+    const MEAN_DIST_PX       = 100;
+    const PRECISION_FLOOR_PX = 3;
+
+    const rawGaps = d.raw_gaps || [];
+    const maxGap  = rawGaps.length ? Math.max(...rawGaps) : 0;
+    const nTotal  = rawGaps.length;
+    const nLong   = d.n_long_gaps || 0;
+
+    const distFlag      = (d.mean_distance || 0) > MEAN_DIST_PX;
+    const gapFlag       = (d.gap_mean_long || 0) > GAP_MEAN_LONG_MS;
+    const precisionFlag = d.mean_distance !== null && d.mean_distance < PRECISION_FLOOR_PX;
+
+    return {
+      bot_suspected: distFlag || gapFlag || precisionFlag,
+      method: 'continuous-pursuit',
+      signals: {
+        mean_distance_px: d.mean_distance != null ? +d.mean_distance.toFixed(1) : null,
+        p90_distance_px:  d.p90_distance  != null ? +d.p90_distance.toFixed(1)  : null,
+        n_long_gaps: nLong,
+        max_long_gap_ms: maxGap,
+        gap_mean_long_ms: d.gap_mean_long != null ? +d.gap_mean_long.toFixed(1) : null,
+        long_gap_proportion: nTotal > 0 ? +(nLong / nTotal).toFixed(4) : null
+      },
+      flags: { distance_suspicious: distFlag, gap_suspicious: gapFlag, precision_suspicious: precisionFlag },
+      thresholds_used: { gap_mean_long_ms: GAP_MEAN_LONG_MS, mean_distance_px: MEAN_DIST_PX, precision_floor_px: PRECISION_FLOOR_PX }
+    };
+  }
+
+  // ===========================================================================
+  // Maze task (adapted from maze-test.html)
+  // ===========================================================================
+  const M_W = 640, M_H = 400;
+  const M_TRIAL_MS = 12000;
+  const DOT_RADIUS  = 12;
+  const TUBE_RADIUS = 24;
+  const DOT_COMPLETE_S = 11.5;
+  const PADDING   = 40;
+  const STEP_DIST = 90;
+  const MAX_TURN  = 50 * Math.PI / 180;
+  const N_WPTS    = 9;
+  const SAMPLES_PER_SEG = 250;
+
+  let _mazeArcTable   = null;
+  let _mazeDotSpeed   = 0;
+  let _mazeCanvasRect = null;
+  let _mazeAnimId     = null;
+
+  function catmullRomPt(p0, p1, p2, p3, t) {
+    const t2 = t*t, t3 = t2*t;
+    return {
+      x: 0.5*((2*p1.x)+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
+      y: 0.5*((2*p1.y)+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3)
+    };
+  }
+
+  function generateMazePath() {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const result = tryGenerateMazePath();
+      const xs = result.arcTable.map(p => p.x);
+      if (Math.max(...xs) - Math.min(...xs) >= 300) return result;
+    }
+    return tryGenerateMazePath();
+  }
+
+  function tryGenerateMazePath() {
+    const wpts = [];
+    wpts.push({ x: PADDING, y: M_H / 2 + (Math.random() - 0.5) * 60 });
+    let heading = (Math.random() - 0.5) * (Math.PI / 2);
+
+    for (let i = 1; i < N_WPTS; i++) {
+      const turn = (Math.random() - 0.5) * 2 * MAX_TURN;
+      heading += turn;
+      const prev = wpts[wpts.length - 1];
+      let nx = prev.x + Math.cos(heading) * STEP_DIST;
+      let ny = prev.y + Math.sin(heading) * STEP_DIST;
+
+      if (nx < PADDING)         { nx = 2 * PADDING - nx;             heading = Math.PI - heading; }
+      if (nx > M_W - PADDING)   { nx = 2 * (M_W - PADDING) - nx;     heading = Math.PI - heading; }
+      if (ny < PADDING)         { ny = 2 * PADDING - ny;             heading = -heading; }
+      if (ny > M_H - PADDING)   { ny = 2 * (M_H - PADDING) - ny;     heading = -heading; }
+
+      nx = Math.max(PADDING, Math.min(M_W - PADDING, nx));
+      ny = Math.max(PADDING, Math.min(M_H - PADDING, ny));
+      wpts.push({ x: nx, y: ny });
+    }
+
+    const phantomStart = { x: 2 * wpts[0].x - wpts[1].x, y: 2 * wpts[0].y - wpts[1].y };
+    const last = N_WPTS - 1;
+    const phantomEnd = { x: 2 * wpts[last].x - wpts[last - 1].x, y: 2 * wpts[last].y - wpts[last - 1].y };
+    const all = [phantomStart, ...wpts, phantomEnd];
+
+    const nSeg = N_WPTS - 1;
+    const pts = [];
+    for (let seg = 0; seg < nSeg; seg++) {
+      const [p0, p1, p2, p3] = [all[seg], all[seg + 1], all[seg + 2], all[seg + 3]];
+      for (let j = 0; j < SAMPLES_PER_SEG; j++) {
+        pts.push(catmullRomPt(p0, p1, p2, p3, j / SAMPLES_PER_SEG));
+      }
+    }
+    const ls = nSeg - 1;
+    pts.push(catmullRomPt(all[ls], all[ls + 1], all[ls + 2], all[ls + 3], 1.0));
+
+    let cum = 0;
+    const arcTable = [{ x: pts[0].x, y: pts[0].y, dist: 0 }];
+    for (let i = 1; i < pts.length; i++) {
+      const dx = pts[i].x - pts[i - 1].x, dy = pts[i].y - pts[i - 1].y;
+      cum += Math.sqrt(dx * dx + dy * dy);
+      arcTable.push({ x: pts[i].x, y: pts[i].y, dist: cum });
+    }
+    return { arcTable, totalLength: cum };
+  }
+
+  function getDotPos(dist, arcTable) {
+    const total = arcTable[arcTable.length - 1].dist;
+    dist = Math.max(0, Math.min(dist, total));
+    let lo = 0, hi = arcTable.length - 1;
+    while (lo < hi - 1) {
+      const mid = (lo + hi) >> 1;
+      if (arcTable[mid].dist <= dist) lo = mid; else hi = mid;
+    }
+    const a = arcTable[lo], b = arcTable[hi];
+    if (b.dist === a.dist) return { x: a.x, y: a.y };
+    const f = (dist - a.dist) / (b.dist - a.dist);
+    return { x: a.x + f * (b.x - a.x), y: a.y + f * (b.y - a.y) };
+  }
+
+  function drawMazeTube(ctx, arcTable) {
+    ctx.save();
+    ctx.lineCap  = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(arcTable[0].x, arcTable[0].y);
+    for (let i = 1; i < arcTable.length; i++) ctx.lineTo(arcTable[i].x, arcTable[i].y);
+    ctx.lineWidth   = TUBE_RADIUS * 2 + 4;
+    ctx.strokeStyle = '#adb5bd';
+    ctx.stroke();
+    ctx.lineWidth   = TUBE_RADIUS * 2;
+    ctx.strokeStyle = '#e9ecef';
+    ctx.stroke();
+
+    const start = arcTable[0];
+    ctx.fillStyle = '#51cf66';
+    ctx.beginPath(); ctx.arc(start.x, start.y, 8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  var mazeInstructions = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus:
+      '<div style="max-width:560px; margin:auto; font-size:18px; line-height:1.7;">' +
+      '<h2 style="margin-top:0;">Part 2: Maze Path Tracking</h2>' +
+      '<p>A <span style="color:#e03131; font-weight:bold;">red dot</span> will move ' +
+      'along a winding path for 12 seconds.</p>' +
+      '<p>Move your mouse to follow the dot as closely as possible throughout ' +
+      'the entire trial. Try to keep your cursor on the dot at all times.</p>' +
+      '<p style="margin-top:24px;">Press any key to begin.</p>' +
+      '</div>',
+    choices: 'ALL_KEYS'
+  };
+
+  var mazeTrial = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<canvas id="maze-canvas" width="' + M_W + '" height="' + M_H + '"></canvas>' +
+              '<p style="text-align:center; color:#888; font-size:14px; margin-top:4px;">' +
+              'Follow the red dot with your mouse</p>',
+    choices: 'NO_KEYS',
+    trial_duration: M_TRIAL_MS,
+    extensions: [{ type: jsPsychExtensionMouseTracking, params: { minimum_sample_time: 0 } }],
+
+    on_load: function () {
+      const canvas = document.getElementById('maze-canvas');
+      const ctx    = canvas.getContext('2d');
+      _mazeCanvasRect = canvas.getBoundingClientRect();
+
+      const { arcTable, totalLength } = generateMazePath();
+      _mazeArcTable = arcTable;
+      _mazeDotSpeed = totalLength / DOT_COMPLETE_S;
+
+      const tubeCanvas = document.createElement('canvas');
+      tubeCanvas.width  = M_W;
+      tubeCanvas.height = M_H;
+      drawMazeTube(tubeCanvas.getContext('2d'), arcTable);
+
+      const trialStart = performance.now();
+
+      function animate(now) {
+        const elapsed = (now - trialStart) / 1000;
+        const dotDist = Math.min(_mazeDotSpeed * elapsed, totalLength);
+        const dp = getDotPos(dotDist, arcTable);
+
+        ctx.clearRect(0, 0, M_W, M_H);
+        ctx.drawImage(tubeCanvas, 0, 0);
+
+        ctx.beginPath();
+        ctx.arc(dp.x, dp.y, DOT_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle   = '#e03131';
+        ctx.fill();
+        ctx.strokeStyle = '#c92a2a';
+        ctx.lineWidth   = 2;
+        ctx.stroke();
+
+        _mazeAnimId = requestAnimationFrame(animate);
+      }
+
+      _mazeAnimId = requestAnimationFrame(animate);
+    },
+
+    on_finish: function (data) {
+      if (_mazeAnimId) { cancelAnimationFrame(_mazeAnimId); _mazeAnimId = null; }
+
+      const moves = (data.mouse_tracking_data || []).filter(e => e.event === 'mousemove');
+      const rect  = _mazeCanvasRect || { left: 0, top: 0 };
+      const arc   = _mazeArcTable   || [];
+      const speed = _mazeDotSpeed;
+      const totalLength = arc.length ? arc[arc.length - 1].dist : 0;
+
+      const rawTrace = [];
+      const distances = moves.map(mv => {
+        const dotDist = Math.min(speed * mv.t / 1000, totalLength);
+        const dp = getDotPos(dotDist, arc);
+        const cx = mv.x - rect.left;
+        const cy = mv.y - rect.top;
+        rawTrace.push({ t: mv.t, curX: +cx.toFixed(1), curY: +cy.toFixed(1), tcx: +dp.x.toFixed(1), tcy: +dp.y.toFixed(1) });
+        return Math.sqrt((cx - dp.x) ** 2 + (cy - dp.y) ** 2);
+      });
+      data.raw_trace = rawTrace;
+
+      const timestamps = moves.map(m => m.t);
+      const gaps = [];
+      for (let i = 1; i < timestamps.length; i++) gaps.push(timestamps[i] - timestamps[i - 1]);
+      const shortGaps = gaps.filter(g => g < 100);
+      const longGaps  = gaps.filter(g => g >= 100);
+      const mean = arr => arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+      const pct  = (arr, p) => arr.length ? [...arr].sort((a,b)=>a-b)[Math.floor(arr.length * p)] : null;
+      const nOutside = distances.filter(d => d > TUBE_RADIUS).length;
+
+      data.n_events                = moves.length;
+      data.mean_distance           = distances.length ? mean(distances) : null;
+      data.p90_distance            = distances.length ? pct(distances, 0.9) : null;
+      data.n_short_gaps            = shortGaps.length;
+      data.n_long_gaps             = longGaps.length;
+      data.gap_mean_short          = mean(shortGaps);
+      data.gap_mean_long           = mean(longGaps);
+      data.gap_sd_long             = longGaps.length > 1
+        ? Math.sqrt(longGaps.map(g => (g - mean(longGaps)) ** 2).reduce((s,v)=>s+v,0) / longGaps.length)
+        : null;
+      data.raw_gaps                = gaps;
+      data.proportion_outside_tube = distances.length ? nOutside / distances.length : null;
+      data.task                    = 'maze';
+    }
+  };
+
+  function computeMazeVerdict(d) {
+    const GAP_MEAN_LONG_MS   = 800;
+    const MEAN_DIST_PX       = 100;
+    const PRECISION_FLOOR_PX = 3;
+
+    const rawGaps = d.raw_gaps || [];
+    const maxGap  = rawGaps.length ? Math.max(...rawGaps) : 0;
+    const nTotal  = rawGaps.length;
+    const nLong   = d.n_long_gaps || 0;
+
+    const distFlag      = (d.mean_distance || 0) > MEAN_DIST_PX;
+    const gapFlag       = (d.gap_mean_long || 0) > GAP_MEAN_LONG_MS;
+    const precisionFlag = d.mean_distance !== null && d.mean_distance < PRECISION_FLOOR_PX;
+
+    return {
+      bot_suspected: distFlag || gapFlag || precisionFlag,
+      method: 'maze-path-tracking',
+      signals: {
+        mean_distance_px: d.mean_distance != null ? +d.mean_distance.toFixed(1) : null,
+        p90_distance_px:  d.p90_distance  != null ? +d.p90_distance.toFixed(1)  : null,
+        n_long_gaps: nLong,
+        max_long_gap_ms: maxGap,
+        gap_mean_long_ms: d.gap_mean_long != null ? +d.gap_mean_long.toFixed(1) : null,
+        long_gap_proportion: nTotal > 0 ? +(nLong / nTotal).toFixed(4) : null,
+        proportion_outside_tube: d.proportion_outside_tube != null ? +d.proportion_outside_tube.toFixed(4) : null
+      },
+      flags: { distance_suspicious: distFlag, gap_suspicious: gapFlag, precision_suspicious: precisionFlag },
+      thresholds_used: { gap_mean_long_ms: GAP_MEAN_LONG_MS, mean_distance_px: MEAN_DIST_PX, precision_floor_px: PRECISION_FLOOR_PX }
+    };
+  }
+
+  // ===========================================================================
+  // Combined results + DataPipe submission
+  // ===========================================================================
+  var results = {
+    type: jsPsychHtmlKeyboardResponse,
+    stimulus: '<div id="task-complete"></div>',
+    choices: 'NO_KEYS',
+    on_load: function () {
+      const allTrials = jsPsych.data.get().filter({ trial_type: 'html-keyboard-response' }).values();
+      const pursuitData = allTrials.find(d => d.task === 'pursuit');
+      const mazeData    = allTrials.find(d => d.task === 'maze');
+
+      const summary = {
+        pursuit: pursuitData ? {
+          n_events: pursuitData.n_events,
+          mean_distance: pursuitData.mean_distance != null ? +pursuitData.mean_distance.toFixed(1) : null,
+          p90_distance: pursuitData.p90_distance != null ? +pursuitData.p90_distance.toFixed(1) : null,
+          n_short_gaps: pursuitData.n_short_gaps,
+          n_long_gaps: pursuitData.n_long_gaps,
+          gap_mean_short: pursuitData.gap_mean_short != null ? +pursuitData.gap_mean_short.toFixed(1) : null,
+          gap_mean_long: pursuitData.gap_mean_long != null ? +pursuitData.gap_mean_long.toFixed(1) : null,
+          gap_sd_long: pursuitData.gap_sd_long != null ? +pursuitData.gap_sd_long.toFixed(1) : null,
+          raw_gaps: pursuitData.raw_gaps || [],
+          raw_trace: pursuitData.raw_trace || [],
+          bounce_times: pursuitData.bounce_times || [],
+          verdict: computePursuitVerdict(pursuitData)
+        } : { error: 'no tracking data' },
+        maze: mazeData ? {
+          n_events: mazeData.n_events,
+          mean_distance: mazeData.mean_distance != null ? +mazeData.mean_distance.toFixed(1) : null,
+          p90_distance: mazeData.p90_distance != null ? +mazeData.p90_distance.toFixed(1) : null,
+          n_short_gaps: mazeData.n_short_gaps,
+          n_long_gaps: mazeData.n_long_gaps,
+          gap_mean_short: mazeData.gap_mean_short != null ? +mazeData.gap_mean_short.toFixed(1) : null,
+          gap_mean_long: mazeData.gap_mean_long != null ? +mazeData.gap_mean_long.toFixed(1) : null,
+          gap_sd_long: mazeData.gap_sd_long != null ? +mazeData.gap_sd_long.toFixed(1) : null,
+          raw_gaps: mazeData.raw_gaps || [],
+          raw_trace: mazeData.raw_trace || [],
+          proportion_outside_tube: mazeData.proportion_outside_tube,
+          verdict: computeMazeVerdict(mazeData)
+        } : { error: 'no tracking data' }
+      };
+
+      document.getElementById('task-complete').innerHTML =
+        '<h2>Task complete</h2>' +
+        '<p>Thanks for participating! Your data has been recorded.</p>' +
+        '<pre>' +
+        'Pursuit — mean distance: ' + (summary.pursuit.mean_distance ?? 'N/A') + 'px\n' +
+        'Maze — mean distance: ' + (summary.maze.mean_distance ?? 'N/A') + 'px, outside path: ' +
+          (summary.maze.proportion_outside_tube != null ? (summary.maze.proportion_outside_tube * 100).toFixed(1) + '%' : 'N/A') +
+        '</pre>' +
+        '<button type="button" id="download" onclick="downloadResult()" ' +
+          'style="padding:0.5em 1.2em; font-size:1em; border-radius:6px; cursor:pointer; ' +
+          'border:none; background:#339af0; color:white;">Download JSON</button>' +
+        '<pre id="data" style="display:none;">' + JSON.stringify(summary) + '</pre>';
+
+      if (DATAPIPE_EXPERIMENT_ID) {
+        fetch('https://pipe.jspsych.org/api/data/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            experimentID: DATAPIPE_EXPERIMENT_ID,
+            filename: `pursuit-maze-${Date.now()}.json`,
+            data: JSON.stringify(summary)
+          })
+        }).catch(err => console.warn('[datapipe] save failed:', err));
+      }
+    }
+  };
+
+  function downloadResult() {
+    const dataElement = document.querySelector('#data');
+    if (!dataElement) return;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const blob = new Blob([dataElement.textContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pursuit-maze-${timestamp}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('begin-btn').onclick = function () {
+    document.getElementById('consent-container').style.display = 'none';
+    document.getElementById('jspsych-target').style.display = '';
+    jsPsych = initJsPsych({
+      display_element: 'jspsych-target',
+      extensions: [{ type: jsPsychExtensionMouseTracking, params: { minimum_sample_time: 0 } }]
+    });
+    jsPsych.run([pursuitInstructions, pursuitTrial, mazeInstructions, mazeTrial, results]);
+  };
+</script>
+</body>
+</html>
