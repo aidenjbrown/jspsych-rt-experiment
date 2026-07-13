@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quick Preferences Task</title>
+    <!-- Pinned jsPsych build with native session recording (record_session /
+         getSessionRecording), same version used by index.html. -->
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/dist/index.browser.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/css/jspsych.css">
+    <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-html-button-response/dist/index.browser.min.js"></script>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f5;
+        color: #202124;
+      }
+
+      #consent-container {
+        max-width: 560px;
+        margin: 60px auto;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 2em;
+      }
+
+      #consent-container h2 { margin-top: 0; }
+
+      #begin-btn {
+        padding: 0.5em 1.2em;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        background: #339af0;
+        color: white;
+      }
+
+      .consent-note { font-size: 0.85em; color: #555; }
+
+      main#app {
+        width: min(720px, calc(100vw - 32px));
+        margin: 80px auto;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 28px;
+        box-sizing: border-box;
+      }
+
+      main#app.jspsych-display-element {
+        height: auto;
+        overflow-y: visible;
+      }
+
+      main#app .jspsych-content-wrapper {
+        height: auto;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #f0f0ed;
+        padding: 16px;
+        border-radius: 6px;
+        text-align: left;
+      }
+
+      .data-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 1em;
+      }
+
+      .data-heading p { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="consent-container">
+      <h2>Quick Preferences Task</h2>
+      <p>This short task asks 10 quick preference questions, one at a time. Click any option to answer and move on — there's no fixed timer, and there are no right or wrong answers.</p>
+      <p class="consent-note">This task records your mouse movements and clicks for research purposes. When you finish, your data is automatically saved to our research data repository. Continuing indicates your consent.</p>
+      <button id="begin-btn" type="button">Begin</button>
+    </div>
+    <main id="app" style="display:none;"></main>
+
+    <script>
+      // Set to an experiment ID from https://pipe.jspsych.org to enable automatic saving.
+      const DATAPIPE_EXPERIMENT_ID = 'oKZUxF9hT4zg';
+
+      function downloadFinalJson() {
+        const dataElement = document.querySelector("#data");
+        if (!dataElement) return;
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        const blob = new Blob([dataElement.textContent], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+
+        link.href = url;
+        link.download = `multi-decision-nav-run-${timestamp}.json`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function showEnd() {
+        const recording = jsPsych.getSessionRecording();
+        window._sessionRecording = recording;
+
+        const app = document.querySelector("#app");
+        app.innerHTML = `
+          <h1>Done</h1>
+          <p>Thanks for participating! Your data has been recorded.</p>
+          <div class="data-heading">
+            <p>Collected data (record_session schema):</p>
+            <button type="button" id="download" onclick="downloadFinalJson()">Download JSON</button>
+          </div>
+          <pre id="data"></pre>
+        `;
+        document.querySelector("#data").textContent = JSON.stringify(recording, null, 2);
+
+        if (DATAPIPE_EXPERIMENT_ID) {
+          fetch("https://pipe.jspsych.org/api/data/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              experimentID: DATAPIPE_EXPERIMENT_ID,
+              filename: `run-${Date.now()}.json`,
+              data: JSON.stringify(recording)
+            })
+          }).catch(err => console.warn("[datapipe] save failed:", err));
+        }
+      }
+
+      // Declared here (top-level script scope) so on_finish/showEnd can see it via
+      // normal lexical scoping. Assigned (not declared) inside the Begin-button handler
+      // once the consent screen is dismissed. Same pattern as pursuit-maze.html.
+      let jsPsych;
+
+      const timeline = [];
+
+      timeline.push({
+        type: jsPsychHtmlButtonResponse,
+        stimulus: `
+          <h1>Welcome</h1>
+          <p>10 quick preference questions, one at a time. Click an option to answer and move on.</p>
+        `,
+        choices: ["Begin"],
+        data: { trial_type_label: "welcome" }
+      });
+
+      // 10 distinct sequential decision screens. Each requires reading the current
+      // screen's specific options and clicking one — no auto-advance, no fixed choice
+      // position, no scored "correct" answer (this measures navigation timing, not
+      // knowledge or accuracy). One click both answers and ends the trial — no separate
+      // Continue button, so a harness auto-advance shortcut has nothing to exploit.
+      const questions = [
+        { prompt: "Which sounds most relaxing right now?", options: ["Quiet rain", "Ocean waves", "A crackling fire", "Wind in trees"] },
+        { prompt: "Pick a pace for a walk.", options: ["Slow stroll", "Steady pace", "Brisk walk", "Fast hike"] },
+        { prompt: "Which snack sounds best?", options: ["Fruit", "Crackers", "Nuts", "Chocolate"] },
+        { prompt: "Choose a room temperature.", options: ["Cool", "Mild", "Warm", "No preference"] },
+        { prompt: "Which color feels calmest?", options: ["Blue", "Green", "Gray", "White"] },
+        { prompt: "Pick a time of day you focus best.", options: ["Early morning", "Midday", "Evening", "Late night"] },
+        { prompt: "Which texture do you prefer?", options: ["Smooth", "Soft", "Textured", "No preference"] },
+        { prompt: "Choose a background sound while working.", options: ["Silence", "Instrumental music", "Ambient noise", "Talk radio"] },
+        { prompt: "Pick a preferred seating.", options: ["Chair", "Couch", "Standing", "Floor"] },
+        { prompt: "Which pace of conversation do you enjoy?", options: ["Slow and thoughtful", "Steady back-and-forth", "Fast and energetic", "Depends on mood"] }
+      ];
+
+      questions.forEach((q, i) => {
+        timeline.push({
+          type: jsPsychHtmlButtonResponse,
+          stimulus: `<h1>Question ${i + 1} of ${questions.length}</h1><p>${q.prompt}</p>`,
+          choices: q.options,
+          data: { trial_type_label: "decision", question_index: i, prompt: q.prompt }
+        });
+      });
+
+      document.getElementById("begin-btn").onclick = function () {
+        document.getElementById("consent-container").style.display = "none";
+        document.querySelector("main#app").style.display = "";
+        jsPsych = initJsPsych({
+          display_element: "app",
+          record_session: true,
+          on_finish: showEnd
+        });
+        jsPsych.run(timeline);
+      };
+    </script>
+  </body>
+</html>
