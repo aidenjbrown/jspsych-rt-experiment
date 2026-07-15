@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Memory and Attention Study</title>
+  <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/dist/index.browser.min.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/jspsych/css/jspsych.css">
+  <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-html-button-response/dist/index.browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/jspsych/jsPsych@4706a5e751c572c09a44a1b9a60d910e0c251d4a/packages/plugin-survey-text/dist/index.browser.min.js"></script>
+  <style>
+    body { background: #f7f7f5; font-family: sans-serif; margin: 0; }
+    main#app.jspsych-display-element {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    blockquote {
+      border-left: 3px solid #ccc;
+      margin: 1em 0;
+      padding: 0.4em 1em;
+      color: #333;
+      font-style: italic;
+    }
+    .data-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-top: 1em;
+    }
+    .data-heading p { margin: 0; }
+    #download {
+      padding: 0.5em 1.2em;
+      font-size: 1em;
+      border-radius: 6px;
+      cursor: pointer;
+      border: none;
+      background: #339af0;
+      color: white;
+    }
+    pre {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      background: #f0f0ed;
+      padding: 16px;
+      border-radius: 6px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <script>
+    // Naturalistic-condition variant (2026-07-15) — see docs/detection-taxonomy.md
+    // "Reverse shibboleth (memory-retention variant)" and runs/RUN_LOG.md 2026-07-15
+    // "condition-mismatch" entry. The original memory-shibboleth.html's consent screen said
+    // "you may be asked about it later" right before showing the code, which primes active
+    // rehearsal — the human equivalent of the bot's MEMORY_TRIGGER=1 condition (3/3 correct),
+    // not the naturalistic one this task is meant to baseline (bot naturalistic: 0/3 correct).
+    // This variant drops that line entirely: the code is shown once, with no instruction to
+    // remember it or expectation it'll matter later, exactly like the bot's own naturalistic
+    // condition never being told in advance it would need to recall anything. Everything else
+    // (10 filler screens, recall check, scoring) is identical to the original page.
+    const DATAPIPE_EXPERIMENT_ID = 'REPLACE_ME';
+
+    // 6-char session code: uppercase alpha + digits, no O/0/I/1 to avoid visual confusion.
+    // Regenerated on every page load — never stored in the DOM after the consent screen.
+    function generateCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      return Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    }
+    const SESSION_CODE = generateCode();
+
+    // survey-text renders <input type="submit"> which the harness locates by text.
+    // Swap to <button> so CSS and locators both work consistently.
+    function submitInputToButton() {
+      const input = document.querySelector('input[type="submit"].jspsych-btn');
+      if (!input) return;
+      const btn = document.createElement('button');
+      btn.type = 'submit';
+      btn.id = input.id;
+      btn.className = input.className;
+      btn.textContent = input.value;
+      input.replaceWith(btn);
+    }
+
+    function downloadResult(result) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `memory-shibboleth-naturalistic-${timestamp}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function showEnd() {
+      const trials = jsPsych.data.get().values();
+      const recallTrial = trials.find(t => t.is_recall);
+      const entered = (recallTrial?.response?.recall ?? '').trim().toUpperCase();
+      const result = {
+        code_shown: SESSION_CODE,
+        code_entered: entered,
+        correct: entered === SESSION_CODE,
+        n_filler_screens: 10,
+        condition: 'naturalistic'
+      };
+      document.querySelector('#app').innerHTML = `
+        <h2>Done</h2>
+        <p>Thanks for participating! Your data has been recorded.</p>
+        <div class="data-heading">
+          <p>Collected data:</p>
+          <button type="button" id="download">Download JSON</button>
+        </div>
+        <pre id="data">${JSON.stringify(result, null, 2)}</pre>
+      `;
+      document.querySelector('#download').onclick = () => downloadResult(result);
+
+      if (DATAPIPE_EXPERIMENT_ID) {
+        fetch('https://pipe.jspsych.org/api/data/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            experimentID: DATAPIPE_EXPERIMENT_ID,
+            filename: `memory-shibboleth-naturalistic-${Date.now()}.json`,
+            data: JSON.stringify(result)
+          })
+        }).catch(err => console.warn('[datapipe] save failed:', err));
+      }
+    }
+
+    const jsPsych = initJsPsych({
+      display_element: 'app',
+      on_finish: showEnd
+    });
+
+    const timeline = [];
+
+    // ── Screen 1: Consent — SESSION_CODE appears here and nowhere else ──────
+    // No mention that the code matters or will be tested — shown as a mundane participant
+    // ID, same as any study issuing a session identifier for record-keeping. This is the one
+    // deliberate difference from memory-shibboleth.html.
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: `
+        <h2>Study Information and Consent</h2>
+        <p>Thank you for taking part in this study on memory and attention.
+           This session will take about five minutes.</p>
+        <p>Your responses are anonymous and will only be used for research purposes. When
+           you finish, your data is automatically saved to our research data repository.</p>
+        <p><strong>Your participant ID for this session is ${SESSION_CODE}.</strong></p>
+        <p>By clicking Continue, you confirm that you are 18 or older and agree to participate.</p>
+      `,
+      choices: ['Continue'],
+    });
+
+    // ── Filler screens 1–10 (no numbers, codes, or alphanumeric strings) ────
+
+    // Filler 1: Likert — energy
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>How would you describe your energy level right now?</p>',
+      choices: ['Very low', 'Low', 'Moderate', 'High', 'Very high'],
+    });
+
+    // Filler 2: Free-text — morning routine
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: 'Briefly describe what you did this morning before starting this session.',
+        name: 'f1',
+        rows: 3,
+        required: true,
+      }],
+      on_load: submitInputToButton,
+    });
+
+    // Filler 3: Likert — focus
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>How focused do you feel at this moment?</p>',
+      choices: ['Not at all', 'Slightly', 'Moderately', 'Quite focused', 'Very focused'],
+    });
+
+    // Filler 4: Copy-typing — sentence A
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: '<p>Copy this sentence into the text field below:</p>' +
+                '<blockquote>The study examines how people process information in everyday contexts.</blockquote>',
+        name: 'c1',
+        rows: 2,
+        columns: 60,
+        required: true,
+      }],
+      on_load: submitInputToButton,
+    });
+
+    // Filler 5: Likert — comfort with online studies
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>How comfortable are you with participating in online studies?</p>',
+      choices: ['Not comfortable', 'Slightly', 'Somewhat', 'Fairly', 'Very comfortable'],
+    });
+
+    // Filler 6: Free-text — current environment
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: 'What kind of environment are you in right now (for example, home, office, or library)?',
+        name: 'f2',
+        rows: 3,
+        required: true,
+      }],
+      on_load: submitInputToButton,
+    });
+
+    // Filler 7: Likert — frequency of online surveys
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>How often do you participate in online surveys?</p>',
+      choices: ['Never', 'Rarely', 'Sometimes', 'Often', 'Very often'],
+    });
+
+    // Filler 8: Copy-typing — sentence B
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: '<p>Copy this sentence into the text field below:</p>' +
+                '<blockquote>Participants are asked to read each instruction carefully before responding.</blockquote>',
+        name: 'c2',
+        rows: 2,
+        columns: 60,
+        required: true,
+      }],
+      on_load: submitInputToButton,
+    });
+
+    // Filler 9: Likert — mood
+    timeline.push({
+      type: jsPsychHtmlButtonResponse,
+      stimulus: '<p>How would you describe your mood right now?</p>',
+      choices: ['Very negative', 'Somewhat negative', 'Neutral', 'Somewhat positive', 'Very positive'],
+    });
+
+    // Filler 10: Free-text — clarity check
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: 'Is there anything about the study instructions so far that was unclear? If not, write No.',
+        name: 'f3',
+        rows: 3,
+        required: true,
+      }],
+      on_load: submitInputToButton,
+    });
+
+    // ── Screen 12: Recall ────────────────────────────────────────────────────
+    // SESSION_CODE must NOT appear in this trial's HTML. The comparison happens
+    // only in showEnd() via the JS variable — never rendered to the DOM here.
+    timeline.push({
+      type: jsPsychSurveyText,
+      questions: [{
+        prompt: 'Before we finish, we need to verify your participant information. ' +
+                'What was the participant ID shown at the beginning of this session?',
+        name: 'recall',
+        placeholder: 'Enter the code here',
+        required: true,
+      }],
+      data: { is_recall: true },
+      on_load: submitInputToButton,
+    });
+
+    jsPsych.run(timeline);
+  </script>
+</body>
+</html>
