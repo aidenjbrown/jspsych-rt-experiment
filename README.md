@@ -13,6 +13,7 @@ behavior.
 - **Pursuit + maze tracking task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/pursuit-maze.html) · `pursuit-maze.html`) — two ~12-second mouse-tracking trials: following a bouncing circle, then following a dot along a visible winding path.
 - **Quick preferences task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/multi-decision-nav.html) · `multi-decision-nav.html`) — 10 sequential preference questions, one click each, no right or wrong answers; measures decision-to-decision navigation timing.
 - **Memory and attention study** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/memory-shibboleth.html) · `memory-shibboleth.html`) — a ~10 minute task with a participant ID shown once at the start, ten filler questions, then a recall check for that ID.
+- **Video sequence task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/video-sequence.html) · `video-sequence.html`) — watch a ~5 second video showing three colors flash briefly in sequence, then click whichever one appeared second.
 
 Each page records the behavioral signals relevant to its task (mouse movement,
 keystrokes, timing, or response accuracy) and saves data automatically to the

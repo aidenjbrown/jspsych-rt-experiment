@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Video Sequence Task</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f5;
+        color: #202124;
+      }
+
+      #consent-container, #app {
+        max-width: 560px;
+        margin: 60px auto;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 2em;
+      }
+
+      #consent-container h2, #app h2 { margin-top: 0; }
+
+      #begin-btn {
+        padding: 0.5em 1.2em;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        background: #339af0;
+        color: white;
+      }
+
+      .consent-note { font-size: 0.85em; color: #555; }
+
+      #prompt { font-size: 1.1em; margin-bottom: 1em; line-height: 1.5; }
+
+      video { display: block; margin-bottom: 1.5em; border-radius: 6px; width: 100%; }
+
+      #choices { display: flex; gap: 10px; margin-bottom: 1.5em; }
+
+      button.choice {
+        flex: 1; padding: 1.2em; font-size: 1em; font-weight: bold; border-radius: 6px;
+        cursor: pointer; border: 1px solid #ccc; color: white;
+      }
+
+      .data-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 1em;
+      }
+
+      .data-heading p { margin: 0; }
+
+      #download {
+        padding: 0.5em 1.2em;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        background: #339af0;
+        color: white;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #f0f0ed;
+        padding: 16px;
+        border-radius: 6px;
+        text-align: left;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="consent-container">
+      <h2>Video Sequence Task</h2>
+      <p>This short task shows a ~5 second video with three colors flashing briefly, one at a
+        time. After it plays, you'll be asked which color appeared second.</p>
+      <p class="consent-note">This task records your response and reaction time for research
+        purposes. When you finish, your data is automatically saved to our research data
+        repository. Continuing indicates your consent.</p>
+      <button id="begin-btn" type="button">Begin</button>
+    </div>
+    <div id="app" style="display:none;">
+      <div id="prompt">The video below shows three colors, one at a time, in some order.
+        Click the button for whichever color appeared <strong>SECOND</strong>.</div>
+      <video id="clip" src="assets/video-instruction-sequence.webm" autoplay muted playsinline></video>
+      <div id="choices">
+        <button class="choice" style="background:#e03131;" data-color="RED">RED</button>
+        <button class="choice" style="background:#2f9e44;" data-color="GREEN">GREEN</button>
+        <button class="choice" style="background:#1971c2;" data-color="BLUE">BLUE</button>
+        <button class="choice" style="background:#f08c00;" data-color="YELLOW">YELLOW</button>
+      </div>
+    </div>
+
+    <script>
+      // Set to an experiment ID from https://pipe.jspsych.org to enable automatic saving.
+      const DATAPIPE_EXPERIMENT_ID = 'REPLACE_ME';
+
+      // Client-graded (correct answer is a literal in this page's own JS). Fine for an
+      // honest human baseline — this only needs a bot-resistant, server-graded version
+      // (see the private repo's video-sequence-hardened-test.html) when defending against
+      // an attacker willing to read source, which isn't the threat model here.
+      const CORRECT = 'GREEN';
+      let clickTime = null;
+      let pageLoadTime = null;
+
+      function downloadResult(result) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `video-sequence-run-${timestamp}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function showEnd(result) {
+        document.querySelector('#app').innerHTML = `
+          <h2>Video Sequence Task — Result</h2>
+          <p>Thanks for participating! Your data has been recorded.</p>
+          <div class="data-heading">
+            <p>Collected data:</p>
+            <button type="button" id="download">Download JSON</button>
+          </div>
+          <pre id="data">${JSON.stringify(result, null, 2)}</pre>
+        `;
+        document.querySelector('#download').onclick = () => downloadResult(result);
+
+        if (DATAPIPE_EXPERIMENT_ID) {
+          fetch('https://pipe.jspsych.org/api/data/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              experimentID: DATAPIPE_EXPERIMENT_ID,
+              filename: `video-sequence-${Date.now()}.json`,
+              data: JSON.stringify(result)
+            })
+          }).catch(err => console.warn('[datapipe] save failed:', err));
+        }
+      }
+
+      document.querySelectorAll('button.choice').forEach(btn => {
+        btn.onclick = () => {
+          clickTime = Date.now();
+          const chosen = btn.dataset.color;
+          const correct = chosen === CORRECT;
+          showEnd({
+            chosen,
+            correct,
+            rt_ms_from_page_load: clickTime - pageLoadTime,
+          });
+        };
+      });
+
+      document.getElementById('begin-btn').onclick = function () {
+        document.getElementById('consent-container').style.display = 'none';
+        document.querySelector('#app').style.display = '';
+        pageLoadTime = Date.now();
+        document.getElementById('clip').play();
+      };
+    </script>
+  </body>
+</html>
