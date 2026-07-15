@@ -12,6 +12,7 @@ behavior.
 - **Reverse-shibboleth task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/reverse-shibboleth.html) · `reverse-shibboleth.html`) — a short 4-question task testing recall of specific facts, constants, and terminology.
 - **Pursuit + maze tracking task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/pursuit-maze.html) · `pursuit-maze.html`) — two ~12-second mouse-tracking trials: following a bouncing circle, then following a dot along a visible winding path.
 - **Quick preferences task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/multi-decision-nav.html) · `multi-decision-nav.html`) — 10 sequential preference questions, one click each, no right or wrong answers; measures decision-to-decision navigation timing.
+- **Memory and attention study** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/memory-shibboleth.html) · `memory-shibboleth.html`) — a ~10 minute task with a participant ID shown once at the start, ten filler questions, then a recall check for that ID.
 
 Each page records the behavioral signals relevant to its task (mouse movement,
 keystrokes, timing, or response accuracy) and saves data automatically to the
