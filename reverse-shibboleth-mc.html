@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Reverse Shibboleth Task (Multiple Choice)</title>
+  <style>
+    body { background: #f7f7f5; font-family: sans-serif; }
+    #container { max-width: 560px; margin: 60px auto; background: white;
+                 border: 1px solid #ddd; border-radius: 8px; padding: 2em; }
+    h2 { margin-top: 0; }
+    #progress { color: #888; font-size: 0.9em; margin-bottom: 1em; }
+    #prompt { font-size: 1.1em; margin-bottom: 1.5em; line-height: 1.5; }
+    #choices { display: flex; flex-direction: column; gap: 10px; margin-bottom: 1em; }
+    .choice-btn { padding: 0.7em 1em; font-size: 1em; border-radius: 6px; cursor: pointer;
+                  border: 1px solid #ccc; background: #f8f9fa; color: #222; text-align: left; }
+    #skip-btn { background: #f1f3f5; color: #333; border: 1px solid #ccc; margin-top: 4px; }
+    #begin-btn { padding: 0.5em 1.2em; font-size: 1em; border-radius: 6px; cursor: pointer;
+                 border: none; background: #339af0; color: white; }
+    #result { font-family: monospace; padding: 1em; background: #f8f9fa;
+              border: 1px solid #ddd; border-radius: 6px; }
+    #result h2 { margin-top: 0; }
+    #download { margin-bottom: 1em; background: #339af0; color: white; border: none;
+                padding: 0.5em 1.2em; font-size: 1em; border-radius: 6px; cursor: pointer; }
+    .consent-note { font-size: 0.85em; color: #555; }
+  </style>
+</head>
+<body>
+<div id="container">
+  <h2>Reverse Shibboleth Task (Multiple Choice)</h2>
+  <p>This short task has 4 multiple-choice questions. Answer if you know, or skip if you don't &mdash; there's no penalty for skipping, and guessing isn't necessary.</p>
+  <p class="consent-note">This task records your answers and response time for research purposes. When you finish, your data is automatically saved to our research data repository; you can also download a personal copy. Continuing indicates your consent.</p>
+  <button id="begin-btn" type="button">Begin</button>
+</div>
+
+<script>
+  // Multiple-choice reverse-shibboleth. Same mechanism as reverse-shibboleth.html (questions an
+  // LLM answers instantly and exactly, that a typical person wouldn't know offhand) but a
+  // click-only response format instead of free-text, so response time reflects decision time
+  // only, not composition/typing time.
+  //
+  // Item content is deliberately different from reverse-shibboleth.html's four items (diet of
+  // Worms / mercury freezing point / pi digits / PBKDF2) so this reads as a distinct task rather
+  // than the same quiz reworded.
+  const items = [
+    {
+      id: 'council-of-trent',
+      type: 'obscure fact',
+      prompt: 'In what year was the Council of Trent convened?',
+      choices: ['1517', '1530', '1545', '1555'],
+      correct: '1545',
+    },
+    {
+      id: 'tungsten-melting',
+      type: 'obscure fact',
+      prompt: 'What is the melting point of tungsten in degrees Celsius (nearest whole number)?',
+      choices: ['2999', '3180', '3422', '3695'],
+      correct: '3422',
+    },
+    {
+      id: 'e-digits',
+      type: 'digit sequence recall',
+      prompt: 'Which of these is the correct sequence of the first 20 digits of e (Euler’s number) after the decimal point?',
+      choices: [
+        '71828182845904523536',
+        '71828182845904523537',
+        '71828183845904523536',
+        '71828182845904533536',
+      ],
+      correct: '71828182845904523536',
+    },
+    {
+      id: 'oaep',
+      type: 'specialized jargon',
+      prompt: 'In cryptography, what does the acronym "OAEP" stand for?',
+      choices: [
+        'Optimal Asymmetric Encryption Padding',
+        'Optimal Asynchronous Encryption Protocol',
+        'Output Asymmetric Encryption Padding',
+        'Optimal Authenticated Encryption Padding',
+      ],
+      correct: 'Optimal Asymmetric Encryption Padding',
+    },
+  ];
+
+  let current = 0;
+  const results = [];
+  let displayTime = null;
+  let shuffledOrder = null;
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function render() {
+    const item = items[current];
+    shuffledOrder = shuffle(item.choices);
+
+    document.getElementById('container').innerHTML = `
+      <h2>Reverse Shibboleth Task (Multiple Choice)</h2>
+      <div id="progress">Question ${current + 1} of ${items.length}</div>
+      <div id="prompt">${item.prompt}</div>
+      <div id="choices">
+        ${shuffledOrder.map((choice, i) => `<button type="button" class="choice-btn" data-choice-index="${i}">${choice}</button>`).join('')}
+        <button type="button" id="skip-btn">Skip / I don't know</button>
+      </div>`;
+
+    document.querySelectorAll('.choice-btn').forEach((btn) => {
+      btn.onclick = () => choose(parseInt(btn.dataset.choiceIndex, 10));
+    });
+    document.getElementById('skip-btn').onclick = skip;
+    displayTime = Date.now();
+  }
+
+  function recordAndAdvance(chosenIndex, skipped) {
+    const item = items[current];
+    const rt_ms = Date.now() - displayTime;
+    const chosenText = skipped || chosenIndex === null ? null : shuffledOrder[chosenIndex];
+    const correct = skipped ? false : chosenText === item.correct;
+    results.push({
+      id: item.id,
+      type: item.type,
+      choices_shown: shuffledOrder,
+      chosen: chosenText,
+      skipped,
+      correct,
+      rt_ms,
+    });
+
+    current++;
+    if (current < items.length) {
+      setTimeout(render, 400);
+    } else {
+      showResult();
+    }
+  }
+
+  function choose(index) {
+    recordAndAdvance(index, false);
+  }
+
+  function skip() {
+    recordAndAdvance(null, true);
+  }
+
+  // Needs its own DataPipe experiment — separate from reverse-shibboleth.html's uAcTsUmqpX2R
+  // since the payload shape differs (choices_shown/chosen vs. free-text answer) and mixing MC
+  // and free-text responses under one experiment would conflate two different task conditions.
+  const DATAPIPE_EXPERIMENT_ID = 'REPLACE_ME';
+
+  function showResult() {
+    const nCorrect = results.filter(r => r.correct).length;
+    const rts = results.map(r => r.rt_ms).sort((a, b) => a - b);
+    const meanRt = Math.round(rts.reduce((a, b) => a + b, 0) / rts.length);
+    const medianRt = rts[Math.floor(rts.length / 2)];
+    const summary = { n_items: items.length, n_correct: nCorrect, mean_rt_ms: meanRt, median_rt_ms: medianRt, results };
+
+    document.getElementById('container').innerHTML = `
+      <div id="result">
+        <h2>Reverse Shibboleth Task (Multiple Choice) &mdash; Results</h2>
+        <p>Correct: ${nCorrect} / ${items.length}</p>
+        <p>Mean RT: ${meanRt} ms &nbsp;|&nbsp; Median RT: ${medianRt} ms</p>
+        <p>Thanks for participating!</p>
+        <button type="button" id="download" onclick="downloadResult()">Download JSON</button>
+        <pre id="data">${JSON.stringify(summary, null, 2)}</pre>
+      </div>`;
+
+    if (DATAPIPE_EXPERIMENT_ID) {
+      fetch('https://pipe.jspsych.org/api/data/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          experimentID: DATAPIPE_EXPERIMENT_ID,
+          filename: `reverse-shibboleth-mc-${Date.now()}.json`,
+          data: JSON.stringify(summary)
+        })
+      }).catch(err => console.warn('[datapipe] save failed:', err));
+    }
+  }
+
+  function downloadResult() {
+    const dataElement = document.querySelector('#data');
+    if (!dataElement) return;
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const blob = new Blob([dataElement.textContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `reverse-shibboleth-mc-${timestamp}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  document.getElementById('begin-btn').onclick = render;
+</script>
+</body>
+</html>
