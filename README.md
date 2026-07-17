@@ -16,6 +16,7 @@ behavior.
 - **Quick decision survey** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/session-reference-survey.html) · `session-reference-survey.html`) — a ~5 minute survey with a mix of quick-choice and short-answer questions about everyday decision-making. Not yet broadcast.
 - **Video sequence task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/video-sequence.html) · `video-sequence.html`) — watch a ~5 second video showing three colors flash briefly in sequence, then click whichever one appeared second.
 - **Reverse-shibboleth task (multiple choice)** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/reverse-shibboleth-mc.html) · `reverse-shibboleth-mc.html`) — a short 4-question multiple-choice task testing recall of specific facts, constants, and terminology. Not yet broadcast.
+- **Flanker task** ([live](https://aidenjbrown.github.io/jspsych-rt-experiment/flanker.html) · `flanker.html`) — a ~5 minute classic Eriksen flanker task: respond to the middle letter of a five-letter string (e.g. "ffhff") with the F or H key, after brief instructions and practice. Task itself is vendored from [expfactory-experiments/flanker](https://github.com/expfactory-experiments/flanker) (MIT) into `flanker-vendor/`, wrapped in this repo's consent/DataPipe pattern. Not yet broadcast.
 
 Each page records the behavioral signals relevant to its task (mouse movement,
 keystrokes, timing, or response accuracy) and saves data automatically to the

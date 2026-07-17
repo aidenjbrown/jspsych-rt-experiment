@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flanker Task</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f7f7f5;
+        color: #202124;
+      }
+
+      #consent-container, #result-container {
+        max-width: 560px;
+        margin: 60px auto;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 2em;
+      }
+
+      #consent-container h2, #result-container h2 { margin-top: 0; }
+
+      #begin-btn {
+        padding: 0.5em 1.2em;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        background: #339af0;
+        color: white;
+      }
+
+      .consent-note { font-size: 0.85em; color: #555; }
+
+      #frame-container {
+        max-width: 960px;
+        margin: 30px auto;
+      }
+
+      #flanker-frame {
+        width: 100%;
+        height: 700px;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        display: block;
+      }
+
+      .data-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: 1em;
+      }
+
+      .data-heading p { margin: 0; }
+
+      #download {
+        padding: 0.5em 1.2em;
+        font-size: 1em;
+        border-radius: 6px;
+        cursor: pointer;
+        border: none;
+        background: #339af0;
+        color: white;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        background: #f0f0ed;
+        padding: 16px;
+        border-radius: 6px;
+        text-align: left;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="consent-container">
+      <h2>Flanker Task</h2>
+      <p>This task takes about 5 minutes. After brief instructions and a short practice round,
+        you'll see a series of five-letter strings (like "ffhff" or "hhhhh") and respond to the
+        <strong>middle</strong> letter by pressing the F or H key. The task runs in fullscreen
+        and ends with two short reflection questions.</p>
+      <p class="consent-note">This task records your responses and reaction times for research
+        purposes. When you finish, your data is automatically saved to our research data
+        repository. Continuing indicates your consent.</p>
+      <button id="begin-btn" type="button">Begin</button>
+    </div>
+
+    <div id="frame-container" style="display:none;">
+      <iframe id="flanker-frame" allow="fullscreen" allowfullscreen title="Flanker task"></iframe>
+    </div>
+
+    <div id="result-container" style="display:none;"></div>
+
+    <script>
+      // Set to an experiment ID from https://pipe.jspsych.org to enable automatic saving.
+      const DATAPIPE_EXPERIMENT_ID = 'REPLACE_ME';
+
+      function downloadResult(result) {
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `flanker-run-${timestamp}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+
+      function showEnd(result) {
+        document.getElementById('frame-container').style.display = 'none';
+        const resultContainer = document.getElementById('result-container');
+        resultContainer.style.display = '';
+        resultContainer.innerHTML = `
+          <h2>Flanker Task — Result</h2>
+          <p>Thanks for participating! Your data has been recorded.</p>
+          <div class="data-heading">
+            <p>Collected data:</p>
+            <button type="button" id="download">Download JSON</button>
+          </div>
+          <pre id="data">${JSON.stringify(result, null, 2)}</pre>
+        `;
+        document.querySelector('#download').onclick = () => downloadResult(result);
+
+        if (DATAPIPE_EXPERIMENT_ID && DATAPIPE_EXPERIMENT_ID !== 'REPLACE_ME') {
+          fetch('https://pipe.jspsych.org/api/data/', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              experimentID: DATAPIPE_EXPERIMENT_ID,
+              filename: `flanker-${Date.now()}.json`,
+              data: JSON.stringify(result)
+            })
+          }).catch(err => console.warn('[datapipe] save failed:', err));
+        }
+      }
+
+      window.addEventListener('message', (event) => {
+        if (!event.data || event.data.type !== 'flanker-complete') return;
+        showEnd({
+          task: 'flanker',
+          trials: JSON.parse(event.data.data),
+        });
+      });
+
+      document.getElementById('begin-btn').onclick = function () {
+        document.getElementById('consent-container').style.display = 'none';
+        document.getElementById('frame-container').style.display = '';
+        // Loaded only now, after consent, matching this repo's other tasks.
+        document.getElementById('flanker-frame').src = 'flanker-vendor/index.html';
+      };
+    </script>
+  </body>
+</html>
