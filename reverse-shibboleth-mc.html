@@ -169,7 +169,7 @@
         <pre id="data">${JSON.stringify(summary, null, 2)}</pre>
       </div>`;
 
-    if (DATAPIPE_EXPERIMENT_ID) {
+    if (DATAPIPE_EXPERIMENT_ID && DATAPIPE_EXPERIMENT_ID !== 'REPLACE_ME') {
       fetch('https://pipe.jspsych.org/api/data/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

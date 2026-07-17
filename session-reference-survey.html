@@ -62,7 +62,7 @@
     // Same underlying mechanism as the original (single incidental code exposure, filler
     // activity, unexpected recall probe at the end) so the comparison to the bot's naturalistic
     // 0/3 result is still valid — only the surface presentation changed.
-    const DATAPIPE_EXPERIMENT_ID = 'REPLACE_ME';
+    const DATAPIPE_EXPERIMENT_ID = 'Jbw7hfE5XhK6';
 
     // 6-char session code: uppercase alpha + digits, no O/0/I/1 to avoid visual confusion.
     // Regenerated on every page load — never stored in the DOM after the consent screen.
@@ -118,7 +118,7 @@
       `;
       document.querySelector('#download').onclick = () => downloadResult(result);
 
-      if (DATAPIPE_EXPERIMENT_ID) {
+      if (DATAPIPE_EXPERIMENT_ID && DATAPIPE_EXPERIMENT_ID !== 'REPLACE_ME') {
         fetch('https://pipe.jspsych.org/api/data/', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
